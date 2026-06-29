@@ -140,4 +140,17 @@ app.listen(PORT, () => {
   if (!process.env.SUPABASE_URL || !process.env.SUPABASE_KEY) {
     console.warn('⚠️  未配置 Supabase 环境变量，数据库功能将无法工作');
   }
+
+  // ---- 自保活：每 10 分钟 ping 自己，防止 Render 免费版休眠 ----
+  const hostname = process.env.RENDER_EXTERNAL_HOSTNAME; // Render 自动注入
+  const selfUrl = hostname
+    ? `https://${hostname}`
+    : (process.env.SELF_URL || `http://localhost:${PORT}`);
+  const keepAliveIntervalMs = 10 * 60 * 1000; // 10 分钟（Render 15 分钟无请求就休眠）
+  setInterval(async () => {
+    try {
+      await fetch(`${selfUrl}/api/health`);
+    } catch (_) { /* 静默 */ }
+  }, keepAliveIntervalMs);
+  console.log(`🫀 自保活已启用：每 ${keepAliveIntervalMs / 60000} 分钟 ping ${selfUrl}/api/health`);
 });
