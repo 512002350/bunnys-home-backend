@@ -99,7 +99,8 @@ router.get('/huawei/callback', async (req, res, next) => {
 });
 
 // POST /api/health/pull — 手动触发拉取（调试用）
-router.post('/pull', async (req, res, next) => {
+// GET 也支持，方便浏览器直接访问测试
+router.all('/pull', async (req, res, next) => {
   try {
     const result = await pullAndStore();
     res.json({ ok: true, result });
