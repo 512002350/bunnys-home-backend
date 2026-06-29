@@ -74,7 +74,8 @@ async function exchangeCode(code, backendUrl) {
 
   cachedToken = data.access_token;
   tokenExpiry = Date.now() + (data.expires_in || 3600) * 1000;
-  return { access_token: data.access_token, expires_in: data.expires_in };
+  console.log('Huawei token exchange success:', { hasRefreshToken: !!data.refresh_token, expires_in: data.expires_in });
+  return { access_token: data.access_token, expires_in: data.expires_in, refresh_token: data.refresh_token };
 }
 
 /** 获取有效 access token（自动续期） */
