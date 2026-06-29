@@ -65,9 +65,20 @@ async function getLastMessagesForSessions(sessionIds) {
 async function createSession(name = '新对话', characterId = 'default') {
   const db = getSupabase();
   if (!db) return { id: 'local-' + Date.now(), name, character_id: characterId, created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+
+  // 先尝试插入 character_id（如果列存在），失败则只插 name
+  try {
+    const { data, error } = await db
+      .from('sessions')
+      .insert({ name, character_id: characterId })
+      .select()
+      .single();
+    if (!error) return data;
+  } catch (_) { /* character_id 列不存在，回退 */ }
+
   const { data, error } = await db
     .from('sessions')
-    .insert({ name, character_id: characterId })
+    .insert({ name })
     .select()
     .single();
   if (error) throw error;
