@@ -17,15 +17,13 @@ const TOKEN_URL = 'https://oauth-login.cloud.huawei.com/oauth2/v3/token';
 const HEALTH_API = 'https://health-api.cloud.huawei.com/healthkit/v1';
 
 // 需要的权限 scope
-// 华为 scope 格式：openid（必选）+ Health Kit 完整 URL
-// 参考 https://developer.huawei.com/consumer/cn/doc/HMSCore-Guides/auth-example-0000001054581058
+// 华为 Health Kit 云侧 REST API（healthkit 命名空间，非 health）
+// 官方 scope 列表: https://developer.huawei.com/consumer/cn/doc/HMSCore-Guides-V5/scope-list-0000001055419280-V5
 const SCOPES = [
   'openid',
-  // 华为 Health Kit 云侧 REST API 权限（注意是 health 不是 healthkit）
-  // 参考: https://developer.huawei.com/consumer/en/doc/HMSCore-Guides-V5/auth-example-0000001054581058-V5
-  'https://www.huawei.com/health/steps.read',
-  'https://www.huawei.com/health/heart_rate.read',
-  'https://www.huawei.com/health/sleep.read',
+  'https://www.huawei.com/healthkit/step.read',
+  'https://www.huawei.com/healthkit/heartrate.read',
+  'https://www.huawei.com/healthkit/sleep.read',
 ].join(' ');
 
 let cachedToken = null;
