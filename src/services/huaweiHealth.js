@@ -108,7 +108,12 @@ async function getAccessToken() {
   });
 
   if (!res.ok) {
-    console.error('Huawei token refresh failed:', res.status);
+    const errText = await res.text();
+    console.error('Huawei token refresh failed:', res.status, errText.slice(0, 300));
+    // token 可能已失效，清除缓存让用户重新授权
+    cachedToken = null;
+    tokenExpiry = 0;
+    cachedUserId = null;
     return null;
   }
 
