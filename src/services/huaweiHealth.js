@@ -16,10 +16,15 @@ const AUTH_URL = 'https://oauth-login.cloud.huawei.com/oauth2/v3/authorize';
 const TOKEN_URL = 'https://oauth-login.cloud.huawei.com/oauth2/v3/token';
 const HEALTH_API = 'https://health-api.cloud.huawei.com/healthkit/v1';
 
-// 需要的权限 scope（先用 openid 打通链路，再加健康 scope）
+// 需要的权限 scope
+// 华为 scope 格式：openid（必选）+ Health Kit 完整 URL
+// 参考 https://developer.huawei.com/consumer/cn/doc/HMSCore-Guides/auth-example-0000001054581058
 const SCOPES = [
   'openid',
-  'profile',
+  // 健康数据只读权限（先打通 OAuth，后续按需加）
+  'https://www.huawei.com/healthkit/heartrate.read',
+  'https://www.huawei.com/healthkit/step.read',
+  'https://www.huawei.com/healthkit/sleep.read',
 ].join(' ');
 
 let cachedToken = null;
@@ -33,7 +38,8 @@ function getAuthUrl(backendUrl) {
   if (!clientId) throw new Error('未配置 HUAWEI_APP_ID');
   const redirectUri = `${backendUrl}/api/health/huawei/callback`;
   const state = Math.random().toString(36).slice(2, 10);
-  return `${AUTH_URL}?response_type=code&client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(SCOPES)}&state=${state}&access_type=offline`;
+  // display=page 是华为 OAuth 的必传参数（PC 端页面），mobile 用 touch
+  return `${AUTH_URL}?response_type=code&client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(SCOPES)}&state=${state}&access_type=offline&display=page`;
 }
 
 /** 用 authorization code 换 token */
