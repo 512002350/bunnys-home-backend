@@ -1,4 +1,5 @@
 const { createClient } = require('@supabase/supabase-js');
+const WebSocket = require('ws');
 
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_KEY;
@@ -8,7 +9,11 @@ let configured = false;
 
 function getSupabase() {
   if (!supabase && supabaseUrl && supabaseKey) {
-    supabase = createClient(supabaseUrl, supabaseKey);
+    supabase = createClient(supabaseUrl, supabaseKey, {
+      db: { schema: 'public' },
+      global: { headers: {} },
+      realtime: {}, // 不需要实时功能，但 SDK 要求传 transport
+    });
     configured = true;
   }
   return supabase;
