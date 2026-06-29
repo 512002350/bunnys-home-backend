@@ -265,8 +265,48 @@ async function getSleep(token) {
 // ---- 主入口 ----
 
 async function pullAndStore() {
-  const token = await getAccessToken();
-  if (!token) return { error: 'no_token', reason: '无法获取 access token，请检查 refresh_token 是否配置' };
+  // 手动获取 token 并捕获详细错误
+  let token;
+  let tokenDiag = {};
+  try {
+    const result = await getAccessToken();
+    if (result && typeof result === 'string') {
+      token = result;
+    } else if (result && result.token) {
+      token = result.token;
+    } else if (result && result.error) {
+      tokenDiag = result;
+    } else {
+      token = result; // null
+    }
+  } catch (e) {
+    tokenDiag = { error: 'getAccessToken exception', detail: e.message };
+  }
+
+  if (!token) {
+    // 尝试手动调用一次 token endpoint 获取详细错误
+    const refreshToken = process.env.HUAWEI_REFRESH_TOKEN;
+    if (refreshToken) {
+      try {
+        const res = await fetch(TOKEN_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            grant_type: 'refresh_token',
+            client_id: process.env.HUAWEI_APP_ID || '',
+            client_secret: process.env.HUAWEI_APP_SECRET || '',
+            refresh_token: refreshToken,
+          }),
+        });
+        const body = await res.text();
+        tokenDiag.tokenEndpointStatus = res.status;
+        tokenDiag.tokenEndpointBody = body.slice(0, 300);
+      } catch (e) {
+        tokenDiag.tokenEndpointError = e.message;
+      }
+    }
+    return { ok: true, result: { error: 'no_token', reason: '无法获取 access token', ...tokenDiag } };
+  }
 
   const userId = getUserId(token);
   const diag = { userId, tokenPrefix: token.slice(0, 20) + '...', steps: null, heartRate: null, sleep: null };
