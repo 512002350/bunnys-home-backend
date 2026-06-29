@@ -123,8 +123,14 @@ async function processChat(sessionId, message, model, opts = {}) {
     memoriesForAI
   );
 
-  // 15. 处理 sticker 标记
-  let replyContent = result.content || '';
+  // 15. 去除 Markdown 格式标记（**粗体**、__粗体__、~~删除线~~、`代码`）
+  let replyContent = (result.content || '')
+    .replace(/\*\*(.+?)\*\*/g, '$1')
+    .replace(/__(.+?)__/g, '$1')
+    .replace(/~~(.+?)~~/g, '$1')
+    .replace(/`(.+?)`/g, '$1');
+
+  // 16. 处理 sticker 标记
   if (stickers.length > 0) {
     replyContent = stickerService.replaceStickerTags(replyContent, stickers);
   }
