@@ -16,13 +16,10 @@ const AUTH_URL = 'https://oauth-login.cloud.huawei.com/oauth2/v3/authorize';
 const TOKEN_URL = 'https://oauth-login.cloud.huawei.com/oauth2/v3/token';
 const HEALTH_API = 'https://health-api.cloud.huawei.com/healthkit/v1';
 
-// 需要的权限 scope
+// 需要的权限 scope（先用 openid 打通链路，再加健康 scope）
 const SCOPES = [
   'openid',
   'profile',
-  'https://www.huawei.com/auth/scopes/healthkit/heartrate',
-  'https://www.huawei.com/auth/scopes/healthkit/activity',
-  'https://www.huawei.com/auth/scopes/healthkit/sleep',
 ].join(' ');
 
 let cachedToken = null;
