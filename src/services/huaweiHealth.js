@@ -261,14 +261,25 @@ async function getSleep(token) {
 
 async function pullAndStore() {
   const token = await getAccessToken();
-  if (!token) return null;
+  if (!token) return { error: 'no_token', reason: '无法获取 access token，请检查 refresh_token 是否配置' };
+
+  const userId = getUserId(token);
+  const diag = { userId, tokenPrefix: token.slice(0, 20) + '...', steps: null, heartRate: null, sleep: null };
 
   try {
     const [steps, hr, sleep] = await Promise.all([
-      getSteps(token),
-      getHeartRate(token),
-      getSleep(token),
+      getSteps(token).catch(e => ({ _error: e.message })),
+      getHeartRate(token).catch(e => ({ _error: e.message })),
+      getSleep(token).catch(e => ({ _error: e.message })),
     ]);
+
+    diag.steps = steps?._error ? { error: steps._error } : (steps ?? 'no_data');
+    diag.heartRate = hr?._error ? { error: hr._error } : (hr ?? 'no_data');
+    diag.sleep = sleep?._error ? { error: sleep._error } : (sleep ?? 'no_data');
+
+    if (steps?._error || hr?._error || sleep?._error) {
+      return { ok: false, diag, reason: 'API 调用出错' };
+    }
 
     const payload = {
       source: 'huaweiHealthKit',
@@ -284,15 +295,15 @@ async function pullAndStore() {
 
     if (!steps && !hr && !sleep) {
       console.log('🫀 华为 Health Kit 无新数据');
-      return null;
+      return { ok: true, result: null, diag, reason: '时间范围内无数据（手环可能未同步或今日无记录）' };
     }
 
     const saved = await insertHealthData(payload);
     console.log('🫀 华为 Health Kit 数据已拉取:', JSON.stringify(payload));
-    return saved;
+    return { ok: true, result: saved, diag };
   } catch (err) {
     console.error('Huawei Health Kit pull failed:', err.message);
-    return null;
+    return { ok: false, error: err.message, diag };
   }
 }
 
