@@ -34,21 +34,23 @@ app.use('/api/health', healthRoutes);  // /api/health/update, /api/health/latest
 // ---- 错误处理 ----
 app.use(errorHandler);
 
-// ---- 定时拉取 Google Fit 健康数据（每 30 分钟） ----
-const { pullAndStore } = require('./services/googleFit');
-const PULL_INTERVAL = 30 * 60 * 1000; // 30 分钟
+// ---- 定时拉取华为 Health Kit 健康数据（每 30 分钟） ----
+const { pullAndStore } = require('./services/huaweiHealth');
+const PULL_INTERVAL = 30 * 60 * 1000;
 
 setTimeout(() => {
   pullAndStore().catch(() => {});
   setInterval(() => pullAndStore().catch(() => {}), PULL_INTERVAL);
-}, 10000); // 启动 10 秒后首次拉取
+}, 10000);
 
 // ---- 启动 ----
 app.listen(PORT, () => {
   console.log(`🐰 Bunny's Home 后端已启动 → http://localhost:${PORT}`);
   console.log(`   健康检查: http://localhost:${PORT}/api/health`);
-  if (process.env.GOOGLE_FIT_CLIENT_ID) {
-    console.log('🫀 Google Fit 自动拉取已启用（每 30 分钟）');
+  if (process.env.HUAWEI_APP_ID) {
+    console.log('🫀 华为 Health Kit 自动拉取已启用（每 30 分钟）');
+  } else {
+    console.log('🫀 华为 Health Kit 未配置，访问 /api/health/huawei/auth 开始授权');
   }
   if (!process.env.OPENROUTER_API_KEY && !process.env.CLAUDE_API_KEY) {
     console.warn('⚠️  未配置模型 API Key，对话接口将无法工作');

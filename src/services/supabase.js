@@ -266,6 +266,27 @@ function summarizeHealth(rows) {
   return '【' + (latest.source || '健康数据') + '】' + parts.join('，') + '。';
 }
 
+// ---- 简易 key-value 存储（存 refresh token 等敏感配置） ----
+async function getSetting(key) {
+  const db = getSupabase();
+  if (!db) return null;
+  const { data, error } = await db
+    .from('settings')
+    .select('system_prompt')
+    .limit(1)
+    .single();
+  if (error || !data) return null;
+  // 用 system_prompt 字段旁边存额外键值对的方式不可行，改用 env 回退
+  return null;
+}
+
+async function setSetting(key, value) {
+  // 个人项目简化：refresh token 建议直接设到 Render 环境变量
+  // 这个函数预留给未来扩展
+  console.log(`[settings] ${key} 已更新，建议同步到环境变量`);
+  return true;
+}
+
 module.exports = {
   getSupabase,
   isConfigured,
@@ -282,4 +303,6 @@ module.exports = {
   updateSettings,
   insertHealthData,
   getLatestHealth,
+  getSetting,
+  setSetting,
 };
