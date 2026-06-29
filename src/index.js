@@ -36,12 +36,91 @@ app.use(errorHandler);
 
 // ---- 定时拉取华为 Health Kit 健康数据（每 30 分钟） ----
 const { pullAndStore } = require('./services/huaweiHealth');
+const { decayAllMemories } = require('./services/supabase');
 const PULL_INTERVAL = 30 * 60 * 1000;
+const DECAY_INTERVAL = 60 * 60 * 1000; // 热度衰减：每小时
 
 setTimeout(() => {
   pullAndStore().catch(() => {});
   setInterval(() => pullAndStore().catch(() => {}), PULL_INTERVAL);
 }, 10000);
+
+// 记忆热度定时衰减（每小时）
+setTimeout(() => {
+  decayAllMemories(0.95).catch(() => {});
+  setInterval(() => decayAllMemories(0.95).catch(() => {}), DECAY_INTERVAL);
+}, 30000);
+
+// 日历层级压缩（每 24 小时一次，首次延迟 2 小时）
+const { compressCalendarLevel } = require('./services/memory');
+const CALENDAR_INTERVAL = 24 * 60 * 60 * 1000;
+
+setTimeout(() => {
+  compressCalendarLevel('daily').catch(() => {});
+  setInterval(() => compressCalendarLevel('daily').catch(() => {}), CALENDAR_INTERVAL);
+}, 2 * 60 * 60 * 1000); // 启动 2 小时后首次运行
+
+// ---- 自主活动引擎 ----
+const autonomous = require('./services/autonomous');
+const { createSession, getSessions } = require('./services/supabase');
+
+// 自主活动专用 API
+app.get('/api/autonomous/status', (req, res) => {
+  res.json(autonomous.getStatus());
+});
+
+app.post('/api/autonomous/start', async (req, res, next) => {
+  try {
+    const { sessionId } = req.body;
+    const sid = sessionId || await ensureAutonomousSession();
+    autonomous.start(sid);
+    res.json({ ok: true, sessionId: sid, status: autonomous.getStatus() });
+  } catch (err) { next(err); }
+});
+
+app.post('/api/autonomous/stop', (req, res) => {
+  autonomous.stop();
+  res.json({ ok: true, status: autonomous.getStatus() });
+});
+
+// 手动触发一次（调试用）
+app.post('/api/autonomous/trigger', async (req, res, next) => {
+  try {
+    if (!autonomous.getStatus().autonomousSessionId) {
+      await ensureAutonomousSession();
+    }
+    const result = await autonomous.trigger();
+    res.json({ ok: true, result });
+  } catch (err) { next(err); }
+});
+
+/**
+ * 确保存在一个"Bunny的主动问候"会话
+ */
+async function ensureAutonomousSession() {
+  try {
+    const sessions = await getSessions();
+    const existing = sessions.find(s => s.name === 'Bunny的主动问候');
+    if (existing) {
+      autonomous.setSessionId(existing.id);
+      return existing.id;
+    }
+    const created = await createSession('Bunny的主动问候');
+    autonomous.setSessionId(created.id);
+    return created.id;
+  } catch (err) {
+    console.error('[Autonomous] 创建会话失败:', err.message);
+    return null;
+  }
+}
+
+// 如果在 Render 环境且配置了 AUTONOMOUS_ENABLED，自动启动
+if (process.env.AUTONOMOUS_ENABLED === 'true') {
+  setTimeout(async () => {
+    const sid = await ensureAutonomousSession();
+    if (sid) autonomous.start(sid);
+  }, 5000); // 等 Supabase 连接就绪
+}
 
 // ---- 启动 ----
 app.listen(PORT, () => {
@@ -51,6 +130,9 @@ app.listen(PORT, () => {
     console.log('🫀 华为 Health Kit 自动拉取已启用（每 30 分钟）');
   } else {
     console.log('🫀 华为 Health Kit 未配置，访问 /api/health/huawei/auth 开始授权');
+  }
+  if (process.env.AUTONOMOUS_ENABLED === 'true') {
+    console.log('🤖 自主活动引擎将在会话就绪后自动启动');
   }
   if (!process.env.OPENROUTER_API_KEY && !process.env.CLAUDE_API_KEY) {
     console.warn('⚠️  未配置模型 API Key，对话接口将无法工作');

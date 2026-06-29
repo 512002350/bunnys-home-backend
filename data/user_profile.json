@@ -1,0 +1,21 @@
+{
+  "created_at": "2026-06-29T19:25:37.760Z",
+  "updated_at": "2026-06-29T19:25:37.760Z",
+  "first_chat_at": null,
+  "total_messages_exchanged": 0,
+  "total_sessions": 0,
+  "deep_conversations": 0,
+  "known_facts": [],
+  "shared_experiences": [],
+  "observed_patterns": [],
+  "things_she_is_figuring_out": [],
+  "relationship_markers": {
+    "has_used_nickname": false,
+    "has_initiated_conversation": false,
+    "has_shared_vulnerability": false,
+    "has_been_sarcastic_with_you": false,
+    "has_said_goodnight_first": false,
+    "deep_night_conversations": 0,
+    "times_she_almost_said_it": 0
+  }
+}

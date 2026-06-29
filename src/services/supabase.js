@@ -36,16 +36,57 @@ async function getSessions() {
   return data;
 }
 
-async function createSession(name = '新对话') {
+/**
+ * 批量获取多个会话的最后一条可见消息的预览
+ * 用于侧边栏会话列表的消息预览
+ */
+async function getLastMessagesForSessions(sessionIds) {
   const db = getSupabase();
-  if (!db) return { id: 'local-' + Date.now(), name, created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+  if (!db || !sessionIds.length) return [];
+
+  // 对每个 session 查询最后一条可见消息 (使用 Promise.all 并行)
+  const results = await Promise.all(
+    sessionIds.map(async (sid) => {
+      const { data, error } = await db
+        .from('messages')
+        .select('session_id, content')
+        .eq('session_id', sid)
+        .eq('visible', true)
+        .order('created_at', { ascending: false })
+        .limit(1);
+      if (error || !data?.length) return null;
+      return data[0];
+    })
+  );
+
+  return results.filter(Boolean);
+}
+
+async function createSession(name = '新对话', characterId = 'default') {
+  const db = getSupabase();
+  if (!db) return { id: 'local-' + Date.now(), name, character_id: characterId, created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
   const { data, error } = await db
     .from('sessions')
-    .insert({ name })
+    .insert({ name, character_id: characterId })
     .select()
     .single();
   if (error) throw error;
   return data;
+}
+
+/**
+ * 获取会话的角色 ID
+ */
+async function getSessionCharacter(sessionId) {
+  const db = getSupabase();
+  if (!db) return 'default';
+  const { data, error } = await db
+    .from('sessions')
+    .select('character_id')
+    .eq('id', sessionId)
+    .single();
+  if (error || !data) return 'default';
+  return data.character_id || 'default';
 }
 
 async function updateSession(id, updates) {
@@ -65,6 +106,20 @@ async function deleteSession(id) {
   const db = getSupabase();
   if (!db) return;
   const { error } = await db.from('sessions').delete().eq('id', id);
+  if (error) throw error;
+}
+
+/**
+ * 清除会话的所有可见消息（保留会话本身）
+ */
+async function deleteSessionMessages(sessionId) {
+  const db = getSupabase();
+  if (!db) return;
+  // 标记所有消息为不可见（软删除）
+  const { error } = await db
+    .from('messages')
+    .update({ visible: false })
+    .eq('session_id', sessionId);
   if (error) throw error;
 }
 
@@ -110,6 +165,49 @@ async function hideMessages(messageIds) {
   if (error) throw error;
 }
 
+async function hideMessage(messageId) {
+  const db = getSupabase();
+  if (!db) return;
+  const { error } = await db.from('messages').update({ visible: false }).eq('id', messageId);
+  if (error) throw error;
+}
+
+/** 获取会话的最后一条可见用户消息 */
+async function getLastUserMessage(sessionId) {
+  const db = getSupabase();
+  if (!db) return null;
+  const { data, error } = await db
+    .from('messages')
+    .select('*')
+    .eq('session_id', sessionId)
+    .eq('role', 'user')
+    .eq('visible', true)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .single();
+  if (error) return null;
+  return data;
+}
+
+// ---- memories 扩展操作 ----
+
+/** 删除单条记忆 */
+async function deleteMemory(id) {
+  const db = getSupabase();
+  if (!db) return;
+  const { error } = await db.from('memories').delete().eq('id', id);
+  if (error) throw error;
+}
+
+/** 批量删除记忆 */
+async function deleteMemories(ids) {
+  if (!ids || ids.length === 0) return;
+  const db = getSupabase();
+  if (!db) return;
+  const { error } = await db.from('memories').delete().in('id', ids);
+  if (error) throw error;
+}
+
 // ---- memories ----
 
 async function getMemories() {
@@ -123,13 +221,36 @@ async function getMemories() {
   return data;
 }
 
-async function insertMemory(summary, compressedMessageIds) {
+/** 向量语义搜索记忆（pgvector） */
+async function searchMemoriesByEmbedding(embedding, threshold = 0.3, limit = 10) {
+  const db = getSupabase();
+  if (!db || !embedding) return [];
+  const { data, error } = await db.rpc('search_memories', {
+    query_embedding: embedding,
+    match_threshold: threshold,
+    match_count: limit,
+  });
+  if (error) {
+    console.error('[Supabase] 向量搜索失败:', error.message);
+    return [];
+  }
+  return data || [];
+}
+
+async function insertMemory(summary, compressedMessageIds, options = {}) {
   const db = getSupabase();
   if (!db) return { id: Date.now(), summary, compressed_message_ids: compressedMessageIds };
   const tokenCount = Math.ceil(summary.length / 3.5);
   const { data, error } = await db
     .from('memories')
-    .insert({ summary, compressed_message_ids: compressedMessageIds, token_count: tokenCount })
+    .insert({
+      summary,
+      compressed_message_ids: compressedMessageIds,
+      token_count: tokenCount,
+      embedding: options.embedding || null,
+      fact_type: options.factType || 'summary',
+      heat: options.heat || 1.0,
+    })
     .select()
     .single();
   if (error) throw error;
@@ -266,6 +387,51 @@ function summarizeHealth(rows) {
   return '【' + (latest.source || '健康数据') + '】' + parts.join('，') + '。';
 }
 
+// ---- 记忆热度系统 ----
+
+/** 召回记忆时加热（单条） */
+async function reheatMemory(id, amount = 0.3) {
+  const db = getSupabase();
+  if (!db) return;
+  // 先读当前热度，再加温
+  const { data } = await db.from('memories').select('heat').eq('id', id).single();
+  if (!data) return;
+  const newHeat = Math.min((data.heat || 1.0) + amount, 5.0);
+  await db.from('memories').update({ heat: newHeat }).eq('id', id);
+}
+
+/** 批量加热已召回的记忆 */
+async function reheatMemories(ids, amount = 0.3) {
+  if (!ids || ids.length === 0) return;
+  const db = getSupabase();
+  if (!db) return;
+  const { data } = await db.from('memories').select('id, heat').in('id', ids);
+  if (!data) return;
+  for (const m of data) {
+    const newHeat = Math.min((m.heat || 1.0) + amount, 5.0);
+    await db.from('memories').update({ heat: newHeat }).eq('id', m.id);
+  }
+}
+
+/** 定时衰减所有记忆的热度（每小时调用一次） */
+async function decayAllMemories(decayRate = 0.95) {
+  const db = getSupabase();
+  if (!db) return;
+  const { data } = await db.from('memories').select('id, heat').gt('heat', 0.11);
+  if (!data) return;
+  let updated = 0;
+  for (const m of data) {
+    const newHeat = Math.max((m.heat || 1.0) * decayRate, 0.1);
+    if (newHeat < m.heat) {
+      await db.from('memories').update({ heat: newHeat }).eq('id', m.id);
+      updated++;
+    }
+  }
+  if (updated > 0) {
+    console.log(`[Supabase] 记忆热度衰减：${updated} 条已降温`);
+  }
+}
+
 // ---- 简易 key-value 存储（存 refresh token 等敏感配置） ----
 async function getSetting(key) {
   const db = getSupabase();
@@ -291,18 +457,29 @@ module.exports = {
   getSupabase,
   isConfigured,
   getSessions,
+  getLastMessagesForSessions,
   createSession,
+  getSessionCharacter,
   updateSession,
   deleteSession,
+  deleteSessionMessages,
   getVisibleMessages,
   insertMessage,
   hideMessages,
+  hideMessage,
+  getLastUserMessage,
+  deleteMemory,
+  deleteMemories,
   getMemories,
   insertMemory,
+  searchMemoriesByEmbedding,
   getSettings,
   updateSettings,
   insertHealthData,
   getLatestHealth,
   getSetting,
   setSetting,
+  reheatMemory,
+  reheatMemories,
+  decayAllMemories,
 };

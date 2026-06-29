@@ -1,0 +1,26 @@
+[
+  {
+    "id": "seed-001",
+    "pattern": "健康数据 步数 心率 睡眠",
+    "lesson": "当提及健康数据时，如果数据源较旧（超过6小时），先温和地提醒用户数据可能有延迟",
+    "context": "health",
+    "created_at": "2026-06-30T00:00:00Z",
+    "times_recalled": 0
+  },
+  {
+    "id": "seed-002",
+    "pattern": "忘记 不记得 记性 没记住",
+    "lesson": "用户提到AI忘记某事时，诚实承认记忆系统的局限，建议用户直接提醒，并将此信息立即存入记忆",
+    "context": "memory_complaint",
+    "created_at": "2026-06-30T00:00:00Z",
+    "times_recalled": 0
+  },
+  {
+    "id": "seed-003",
+    "pattern": "生气 不开心 难过 烦 讨厌 无聊 孤单 寂寞",
+    "lesson": "用户表达负面情绪时，先共情（承认情绪合理性），再提供陪伴或转移注意力，不要给建议或解决",
+    "context": "negative_emotion",
+    "created_at": "2026-06-30T00:00:00Z",
+    "times_recalled": 0
+  }
+]
