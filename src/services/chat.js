@@ -192,7 +192,7 @@ async function processChat(sessionId, message, model, opts = {}) {
       thinking: i === 0 ? (result.thinking || null) : null,
     })),
     model: result.model || model,
-    messageId: savedMsg.id,
+    messageId: savedMessages[0]?.id,
     sessionId,
     compressed: compressResult.compressed,
     tokenInfo: {
