@@ -7,6 +7,7 @@ const errorHandler = require('./middleware/errorHandler');
 const chatRoutes = require('./routes/chat');
 const sessionsRoutes = require('./routes/sessions');
 const settingsRoutes = require('./routes/settings');
+const healthRoutes = require('./routes/health');
 // sticker 路由已合并到 chat.js 中（/api/stickers）
 
 const app = express();
@@ -28,6 +29,7 @@ app.get('/api/health', (req, res) => {
 app.use('/api', chatRoutes);      // /api/chat, /api/stickers
 app.use('/api/sessions', sessionsRoutes);
 app.use('/api/settings', settingsRoutes);
+app.use('/api/health', healthRoutes);  // /api/health/update, /api/health/latest
 
 // ---- 错误处理 ----
 app.use(errorHandler);

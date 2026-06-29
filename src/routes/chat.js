@@ -6,6 +6,7 @@ const {
   getMemories,
   getSettings,
   updateSession,
+  getLatestHealth,
 } = require('../services/supabase');
 const { callModel, estimateContextTokens } = require('../services/ai');
 const { compressIfNeeded } = require('../services/memory');
@@ -73,14 +74,26 @@ router.post('/chat', async (req, res, next) => {
       ? [...memories, compressResult.newMemory]
       : memories;
 
-    // 5. 加载表情库并注入系统提示词
+    // 5. 加载健康摘要（手环推送的数据）
+    let healthSummary = null;
+    try {
+      healthSummary = await getLatestHealth();
+    } catch (e) { /* 静默失败，不影响对话 */ }
+
+    // 6. 加载表情库并注入系统提示词
     const stickers = await stickerService.getStickers();
     let systemPrompt = settings.system_prompt || '';
+
+    // 注入健康数据
+    if (healthSummary) {
+      systemPrompt += '\n\n（以下是用户最近 24 小时健康数据，可自然地引用来表达关心，但不需逐条复述）：\n' + healthSummary;
+    }
+
     if (stickers.length > 0) {
       systemPrompt += stickerService.stickerPromptBlock(stickers);
     }
 
-    // 6. 组装消息列表（不含系统提示词，由 ai.js 处理）
+    // 7. 组装消息列表（不含系统提示词，由 ai.js 处理）
     const messagesForAI = currentMessages.map(m => ({
       role: m.role,
       content: m.content,

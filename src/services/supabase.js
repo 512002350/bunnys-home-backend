@@ -197,6 +197,75 @@ async function updateSettings(updates) {
   return data;
 }
 
+// ---- health_data ----
+
+async function insertHealthData(fields) {
+  const db = getSupabase();
+  if (!db) return { id: Date.now(), ...fields };
+  const { data, error } = await db
+    .from('health_data')
+    .insert({
+      heart_rate: fields.heart_rate || null,
+      steps: fields.steps || null,
+      sleep_total: fields.sleep_total || null,
+      sleep_deep: fields.sleep_deep || null,
+      sleep_light: fields.sleep_light || null,
+      calories: fields.calories || null,
+      source: fields.source || 'macroDroid',
+      recorded_at: fields.recorded_at || new Date().toISOString(),
+    })
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+// 获取最近 24 小时内的健康数据，汇成摘要
+async function getLatestHealth() {
+  const db = getSupabase();
+  if (!db) return null;
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const { data, error } = await db
+    .from('health_data')
+    .select('*')
+    .gte('created_at', since)
+    .order('created_at', { ascending: false })
+    .limit(50);
+  if (error) throw error;
+  if (!data || data.length === 0) return null;
+  return summarizeHealth(data);
+}
+
+// 把原始数据汇成一段自然语言摘要
+function summarizeHealth(rows) {
+  const latest = rows[0];
+  const parts = [];
+
+  if (latest.heart_rate) {
+    parts.push(`最近心率: ${latest.heart_rate} bpm`);
+  }
+  if (latest.steps) {
+    parts.push(`今日步数: ${latest.steps} 步`);
+  }
+  if (latest.sleep_total) {
+    const h = Math.floor(latest.sleep_total / 60);
+    const m = latest.sleep_total % 60;
+    parts.push(`昨晚睡眠: ${h}小时${m}分钟`);
+    if (latest.sleep_deep) {
+      const dh = Math.floor(latest.sleep_deep / 60);
+      const dm = latest.sleep_deep % 60;
+      parts.push(`深度睡眠: ${dh}小时${dm}分钟`);
+    }
+  }
+  if (latest.calories) {
+    parts.push(`消耗卡路里: ${latest.calories} kcal`);
+  }
+
+  if (parts.length === 0) return null;
+
+  return '【' + (latest.source || '健康数据') + '】' + parts.join('，') + '。';
+}
+
 module.exports = {
   getSupabase,
   isConfigured,
@@ -211,4 +280,6 @@ module.exports = {
   insertMemory,
   getSettings,
   updateSettings,
+  insertHealthData,
+  getLatestHealth,
 };

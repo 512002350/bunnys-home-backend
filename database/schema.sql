@@ -56,6 +56,22 @@ CREATE TABLE IF NOT EXISTS stickers (
   descr TEXT
 );
 
+-- ⑥ health_data：健康数据（手环推送）
+CREATE TABLE IF NOT EXISTS health_data (
+  id              SERIAL PRIMARY KEY,
+  heart_rate      INTEGER,      -- 心率 bpm
+  steps           INTEGER,      -- 今日步数
+  sleep_total     INTEGER,      -- 总睡眠 分钟
+  sleep_deep      INTEGER,      -- 深度睡眠 分钟
+  sleep_light     INTEGER,      -- 浅度睡眠 分钟
+  calories        INTEGER,      -- 消耗卡路里
+  source          TEXT DEFAULT 'macroDroid',  -- 数据来源
+  recorded_at     TIMESTAMPTZ,  -- 手环记录的时间
+  created_at      TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_health_created ON health_data(created_at DESC);
+
 -- 插入默认设置（如果为空）
 INSERT INTO settings (system_prompt)
 SELECT '你是一个温柔友善的名叫 Bunny 的 AI 伴侣。你的回复温暖、简洁、有共鸣。你可以用一些可爱的表达，但保持自然。'
