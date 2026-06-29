@@ -21,10 +21,11 @@ const HEALTH_API = 'https://health-api.cloud.huawei.com/healthkit/v1';
 // 参考 https://developer.huawei.com/consumer/cn/doc/HMSCore-Guides/auth-example-0000001054581058
 const SCOPES = [
   'openid',
-  // 健康数据只读权限（先打通 OAuth，后续按需加）
-  'https://www.huawei.com/healthkit/heartrate.read',
-  'https://www.huawei.com/healthkit/step.read',
-  'https://www.huawei.com/healthkit/sleep.read',
+  // 华为 Health Kit 云侧 REST API 权限（注意是 health 不是 healthkit）
+  // 参考: https://developer.huawei.com/consumer/en/doc/HMSCore-Guides-V5/auth-example-0000001054581058-V5
+  'https://www.huawei.com/health/steps.read',
+  'https://www.huawei.com/health/heart_rate.read',
+  'https://www.huawei.com/health/sleep.read',
 ].join(' ');
 
 let cachedToken = null;
@@ -126,13 +127,36 @@ async function getAccessToken() {
 
 // ---- 数据拉取 ----
 
+/** 从 JWT access_token 解析 userId（华为 token 的 sub 字段） */
+function parseUserId(token) {
+  try {
+    const payload = token.split('.')[1];
+    const decoded = JSON.parse(Buffer.from(payload, 'base64').toString('utf-8'));
+    return decoded.sub || decoded.open_id || decoded.user_id || null;
+  } catch (e) {
+    console.error('Failed to parse userId from token:', e.message);
+    return null;
+  }
+}
+
+/** 获取当前用户 ID（缓存 2 小时，跟 token 同生命周期） */
+let cachedUserId = null;
+function getUserId(token) {
+  if (!cachedUserId) {
+    cachedUserId = parseUserId(token);
+  }
+  return cachedUserId;
+}
+
+/** 毫秒时间戳 */
+function toMillis(date) {
+  return date.getTime();
+}
+
 function todayRange() {
   const start = new Date();
   start.setHours(0, 0, 0, 0);
-  return {
-    startTime: start.toISOString().replace(/\.\d{3}Z$/, 'Z'),
-    endTime: new Date().toISOString().replace(/\.\d{3}Z$/, 'Z'),
-  };
+  return { startTime: toMillis(start), endTime: toMillis(new Date()) };
 }
 
 function lastNightRange() {
@@ -141,71 +165,94 @@ function lastNightRange() {
   const start = new Date(end);
   start.setDate(start.getDate() - 1);
   start.setHours(20, 0, 0, 0);
-  return {
-    startTime: start.toISOString().replace(/\.\d{3}Z$/, 'Z'),
-    endTime: end.toISOString().replace(/\.\d{3}Z$/, 'Z'),
-  };
+  return { startTime: toMillis(start), endTime: toMillis(end) };
 }
 
 async function healthApiGet(token, path, params = {}) {
+  const clientId = process.env.HUAWEI_APP_ID;
   const url = new URL(`${HEALTH_API}${path}`);
   Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
   const res = await fetch(url, {
-    headers: { Authorization: `Bearer ${token}` },
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'x-client-id': clientId,
+    },
   });
-  if (!res.ok) return null;
+  if (!res.ok) {
+    const text = await res.text();
+    console.error(`Health Kit API ${path} failed (${res.status}):`, text.slice(0, 200));
+    return null;
+  }
   return res.json();
 }
 
 /** 拿今日步数 */
 async function getSteps(token) {
+  const userId = getUserId(token);
+  if (!userId) { console.error('Cannot get userId for steps API'); return null; }
   const range = todayRange();
-  const data = await healthApiGet(token, '/activityRecords', {
-    dataType: 'STEPS',
+  const data = await healthApiGet(token, `/users/${userId}/steps`, {
     startTime: range.startTime,
     endTime: range.endTime,
   });
-  if (!data || !data.records) return null;
+  if (!data) return null;
+  // 返回格式: { items: [{ value, startTime, endTime }, ...] } 或类似
+  const items = data.items || data.records || [];
   let total = 0;
-  for (const r of data.records) {
-    total += r.value || 0;
+  for (const r of items) {
+    total += r.value || r.count || 0;
   }
   return total || null;
 }
 
 /** 拿最近心率 */
 async function getHeartRate(token) {
-  const range = todayRange();
-  // 把开始时间设为 2 小时前，查最近的心率
-  const start = new Date(Date.now() - 2 * 3600 * 1000);
-  const data = await healthApiGet(token, '/heartRateRecords', {
-    startTime: start.toISOString().replace(/\.\d{3}Z$/, 'Z'),
-    endTime: range.endTime,
+  const userId = getUserId(token);
+  if (!userId) { console.error('Cannot get userId for heartRate API'); return null; }
+  const start = toMillis(new Date(Date.now() - 2 * 3600 * 1000));
+  const end = toMillis(new Date());
+  const data = await healthApiGet(token, `/users/${userId}/heartRate`, {
+    startTime: start,
+    endTime: end,
   });
-  if (!data || !data.records || data.records.length === 0) return null;
-  const latest = data.records[data.records.length - 1];
+  if (!data) return null;
+  const items = data.items || data.records || [];
+  if (items.length === 0) return null;
+  const latest = items[items.length - 1];
   return latest.value || null;
 }
 
 /** 拿昨晚睡眠 */
 async function getSleep(token) {
+  const userId = getUserId(token);
+  if (!userId) { console.error('Cannot get userId for sleep API'); return null; }
   const range = lastNightRange();
-  const data = await healthApiGet(token, '/sleepRecords', {
+  const data = await healthApiGet(token, `/users/${userId}/sleep`, {
     startTime: range.startTime,
     endTime: range.endTime,
   });
-  if (!data || !data.records || data.records.length === 0) return null;
+  if (!data) return null;
+  const items = data.items || data.records || [];
+  if (items.length === 0) return null;
 
   let totalMinutes = 0;
   let deepMinutes = 0;
   let lightMinutes = 0;
-  for (const r of data.records) {
-    const dur = r.duration || 0; // 分钟
-    totalMinutes += dur;
-    // sleepType: 0=浅睡, 1=深睡, 2=REM, 3=清醒
-    const type = r.sleepType ?? -1;
-    if (type === 1) deepMinutes += dur;
-    else if (type === 0 || type === 2) lightMinutes += dur;
+  for (const r of items) {
+    // sleepStages 包含阶段数组: [{ stage: 'deep'|'light'|'rem'|'awake'|'unknown', duration(秒) }]
+    const stages = r.sleepStages || [];
+    for (const s of stages) {
+      const mins = Math.round((s.duration || 0) / 60); // 秒 → 分钟
+      totalMinutes += mins;
+      if (s.stage === 'deep') deepMinutes += mins;
+      else if (s.stage === 'light' || s.stage === 'rem') lightMinutes += mins;
+    }
+    // 兼容旧格式：直接有 duration 字段（分钟）
+    if (stages.length === 0 && r.duration) {
+      totalMinutes += r.duration;
+      if (r.sleepType === 1) deepMinutes += r.duration;
+      else lightMinutes += r.duration;
+    }
   }
 
   if (totalMinutes === 0) return null;
@@ -243,7 +290,7 @@ async function pullAndStore() {
     }
 
     const saved = await insertHealthData(payload);
-    console.log('🫀 华为 Health Kit 数据已拉取:', payload);
+    console.log('🫀 华为 Health Kit 数据已拉取:', JSON.stringify(payload));
     return saved;
   } catch (err) {
     console.error('Huawei Health Kit pull failed:', err.message);
