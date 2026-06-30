@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { processChat } = require('../services/chat');
+const { processChat, recordTypingEvent } = require('../services/chat');
 const { noteUserActivity } = require('../services/autonomous');
 
 // 后端的 sticker tag 替换逻辑：把 [sticker:名字] 换成前端能识别的图片标记
@@ -35,10 +35,49 @@ router.delete('/stickers/:id', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// POST /api/chat/upload-image — 聊天图片上传（拍照/图库 → DeepSeek 识图 → 存文件）
+router.post('/chat/upload-image', async (req, res, next) => {
+  try {
+    const path = require('path');
+    const fs = require('fs');
+    const crypto = require('crypto');
+    const { describeImage } = require('../services/imageVision');
+
+    const { sessionId, imageBase64, mimeType } = req.body;
+    if (!imageBase64) {
+      return res.status(400).json({ error: '缺少 imageBase64 参数' });
+    }
+
+    const mime = mimeType || 'image/jpeg';
+    const ext = mime.split('/')[1] || 'jpg';
+
+    // 1. 调 DeepSeek 视觉识别
+    const description = await describeImage(imageBase64, mime);
+
+    // 2. 保存图片到 public/uploads/
+    const uploadsDir = path.join(__dirname, '..', '..', 'public', 'uploads');
+    if (!fs.existsSync(uploadsDir)) {
+      fs.mkdirSync(uploadsDir, { recursive: true });
+    }
+    const filename = `img-${crypto.randomUUID()}.${ext}`;
+    const filePath = path.join(uploadsDir, filename);
+    const buffer = Buffer.from(imageBase64, 'base64');
+    fs.writeFileSync(filePath, buffer);
+
+    const url = `/uploads/${filename}`;
+
+    console.log(`[Chat] 图片已上传: ${url} (${buffer.length} bytes), 描述: ${description.slice(0, 60)}...`);
+
+    res.json({ url, description, id: filename.replace(`.${ext}`, '') });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // POST /api/chat — 核心对话接口（委托给 services/chat.js）
 router.post('/chat', async (req, res, next) => {
   try {
-    const { sessionId, message, model, character } = req.body;
+    const { sessionId, message, model, character, typingMetrics, imageDescription } = req.body;
 
     if (!sessionId || !message) {
       return res.status(400).json({ error: '缺少 sessionId 或 message' });
@@ -47,10 +86,35 @@ router.post('/chat', async (req, res, next) => {
     // 通知自主活动引擎：用户刚刚发了消息（重置空闲计时）
     noteUserActivity();
 
-    const reply = await processChat(sessionId, message, model, { character });
+    const reply = await processChat(sessionId, message, model, {
+      character,
+      typingMetrics,
+      imageDescription,
+    });
     res.json(reply);
   } catch (err) {
     next(err);
+  }
+});
+
+// POST /api/chat/typing-event — 前端推送输入行为事件（光标空闲/删了又打等犹豫信号）
+// 这些事件会缓存在内存中，在用户下次发送消息时注入系统提示词
+router.post('/chat/typing-event', (req, res) => {
+  try {
+    const { sessionId, type, data } = req.body;
+    if (!sessionId || !type) {
+      return res.status(400).json({ error: '缺少 sessionId 或 type' });
+    }
+
+    const validTypes = ['cursor_idle', 'delete_retype', 'abandoned_input', 'close_reopen'];
+    if (!validTypes.includes(type)) {
+      return res.status(400).json({ error: '无效的 type，支持：' + validTypes.join(', ') });
+    }
+
+    recordTypingEvent(sessionId, { type, data });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 

@@ -2,9 +2,13 @@
  * 表情包服务
  *
  * 上传时视觉模型看一眼写好描述 → 之后只读文字描述来挑表情 → 不再看图
+ * 图片保存到本地 public/uploads/stickers/ 目录，通过 /uploads/stickers/xxx 访问
  */
 
+const path = require('path');
+const fs = require('fs');
 const { getSupabase } = require('./supabase');
+const { describeImage } = require('./imageVision');
 
 /**
  * 获取所有表情包
@@ -24,52 +28,24 @@ async function getStickers() {
 }
 
 /**
- * 上传表情包 —— 调视觉模型自动描述，然后入库
+ * 上传表情包 —— 调视觉模型自动描述 → 存文件 → 入库
  * @param {string} imageBase64 - 图片的 base64 编码（不含 data:image/xxx;base64, 前缀）
  * @param {string} mimeType - 图片 MIME 类型，默认 'image/png'
  */
 async function uploadSticker(imageBase64, mimeType = 'image/png') {
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey) throw new Error('未配置 OPENROUTER_API_KEY，无法调用视觉模型');
-
-  const baseURL = process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1';
-
-  // 如果没有 data: 前缀，自动加上
-  const dataUrl = imageBase64.startsWith('data:')
-    ? imageBase64
-    : `data:${mimeType};base64,${imageBase64}`;
-
-  const prompt =
+  const stickerPrompt =
     '这是一张表情包。先起个3-6字短名(梗/情绪关键词,好记、能当引用名)，' +
     '再写一句话描述(图上文字 + 表达的情绪/梗 + 什么场景下适合发)。' +
     '严格用这一行格式回复：名字｜描述';
 
-  const response = await fetch(`${baseURL}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: 'google/gemini-2.0-flash-001', // 便宜视觉模型
-      messages: [{
-        role: 'user',
-        content: [
-          { type: 'text', text: prompt },
-          { type: 'image_url', image_url: { url: dataUrl } },
-        ],
-      }],
-      max_tokens: 200,
-    }),
-  });
-
-  if (!response.ok) {
-    const errText = await response.text();
-    throw new Error(`视觉模型调用失败 ${response.status}: ${errText}`);
+  // 1. 调视觉模型识别
+  let line;
+  try {
+    line = await describeImage(imageBase64, mimeType, stickerPrompt);
+  } catch (err) {
+    throw new Error('视觉模型识别表情包失败: ' + err.message);
   }
 
-  const data = await response.json();
-  const line = data.choices?.[0]?.message?.content?.trim() || '';
   const separatorIdx = line.indexOf('｜');
   const name = separatorIdx > 0 ? line.slice(0, separatorIdx).trim() : line.slice(0, 6);
   const desc = separatorIdx > 0 ? line.slice(separatorIdx + 1).trim() : line;
@@ -78,14 +54,22 @@ async function uploadSticker(imageBase64, mimeType = 'image/png') {
     throw new Error('视觉模型未能识别表情包名字');
   }
 
-  // 生成一个 URL 友好的 id
-  const id = name.toLowerCase().replace(/\s+/g, '-');
+  // 2. 生成 id 和文件名
+  const id = name.toLowerCase().replace(/\s+/g, '-').replace(/[^\w一-鿿-]/g, '');
+  const ext = mimeType.split('/')[1] || 'png';
+  const filename = `${id}.${ext}`;
 
-  // 这里需要一个公开可访问的图片 URL。实际部署时你需要：
-  // - 上传图片到 Supabase Storage 或 Cloudflare R2 等
-  // - 或者直接用 base64 data URL（只适合少量小图）
-  // 当前版本返回 dataUrl，你可以之后替换为图床 URL
-  const url = dataUrl; // TODO: 替换为你的图床 URL
+  // 3. 保存图片到本地 public/uploads/stickers/
+  const stickersDir = path.join(__dirname, '..', '..', 'public', 'uploads', 'stickers');
+  if (!fs.existsSync(stickersDir)) {
+    fs.mkdirSync(stickersDir, { recursive: true });
+  }
+  const filePath = path.join(stickersDir, filename);
+  const buffer = Buffer.from(imageBase64, 'base64');
+  fs.writeFileSync(filePath, buffer);
+
+  // 4. 存储 URL 路径（可公开访问的相对路径）
+  const url = `/uploads/stickers/${filename}`;
 
   const db = getSupabase();
   if (!db) {

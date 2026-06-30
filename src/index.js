@@ -1,6 +1,8 @@
 require('dotenv').config();
 
 const express = require('express');
+const path = require('path');
+const fs = require('fs');
 const cors = require('cors');
 const errorHandler = require('./middleware/errorHandler');
 
@@ -13,15 +15,29 @@ const healthRoutes = require('./routes/health');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// 确保上传目录存在
+const uploadsDir = path.join(__dirname, '..', 'public', 'uploads');
+const stickersDir = path.join(uploadsDir, 'stickers');
+[uploadsDir, stickersDir].forEach(dir => {
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+    console.log(`📁 已创建目录: ${dir}`);
+  }
+});
+
 // ---- 中间件 ----
 app.use(cors({
   origin: process.env.FRONTEND_URL || 'http://localhost:5173',
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   credentials: true,
 }));
-app.use(express.json({ limit: '10mb' })); // 支持 base64 图片上传
+app.use(express.json({ limit: '50mb' })); // 支持 base64 图片上传（手机照片约 3-15MB）
 
 // ---- 路由 ----
+app.use('/uploads', express.static(path.join(__dirname, '..', 'public', 'uploads'), {
+  maxAge: '7d',
+  immutable: true,
+}));
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
