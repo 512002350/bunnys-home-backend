@@ -5,6 +5,7 @@ const {
   createSession,
   updateSession,
   deleteSession,
+  deleteSessionMessages,
   getVisibleMessages,
   getLastMessagesForSessions,
 } = require('../services/supabase');

@@ -287,7 +287,6 @@ async function compressCalendarLevel(level = 'daily') {
 
         // 用便宜模型把当天事实合并为一条日摘要
         const factTexts = dayFacts.map(f => f.summary).join('\n');
-        const { callModel } = require('./ai');
         const calendarSystemPrompt = await skills.resolve('tool-calendar-summarize', { date: day }).catch(() =>
           `请将以下${day}的记忆事实合并为一条简短的日摘要（50-150字）。保留重要事件和情感变化，用第三人称。`
         );

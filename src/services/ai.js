@@ -27,7 +27,7 @@ function estimateMessagesTokens(messages) {
  * @param {string} systemPrompt - 系统提示词
  * @param {Array} memorySummaries - 记忆摘要列表
  */
-async function callModel(messages, model, settings, systemPrompt = '', memorySummaries = []) {
+async function callModel(messages, model, settings, systemPrompt = '', memorySummaries = [], opts = {}) {
   // 组装系统提示词
   let fullSystemPrompt = systemPrompt || settings.system_prompt || '';
 
@@ -43,16 +43,16 @@ async function callModel(messages, model, settings, systemPrompt = '', memorySum
   const provider = getProvider(model);
 
   if (provider === 'anthropic') {
-    return callAnthropicAPI(messages, fullSystemPrompt, settings, model);
+    return callAnthropicAPI(messages, fullSystemPrompt, settings, model, opts.signal);
   }
 
   // DeepSeek 直连
   if (provider === 'deepseek') {
-    return callDeepSeekAPI(messages, fullSystemPrompt, settings);
+    return callDeepSeekAPI(messages, fullSystemPrompt, settings, opts.signal);
   }
 
   // 默认走 OpenAI 兼容格式（OpenRouter、DeepSeek 等）
-  return callOpenAICompatibleAPI(messages, fullSystemPrompt, settings, model);
+  return callOpenAICompatibleAPI(messages, fullSystemPrompt, settings, model, opts.signal);
 }
 
 function getProvider(model) {
@@ -67,7 +67,7 @@ function getProvider(model) {
 /**
  * OpenAI 兼容格式（OpenRouter / DeepSeek / 大多数中转服务）
  */
-async function callOpenAICompatibleAPI(messages, systemPrompt, settings, model) {
+async function callOpenAICompatibleAPI(messages, systemPrompt, settings, model, signal) {
   const baseURL = process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1';
   const apiKey = process.env.OPENROUTER_API_KEY || process.env.DEEPSEEK_API_KEY;
 
@@ -87,14 +87,17 @@ async function callOpenAICompatibleAPI(messages, systemPrompt, settings, model) 
     max_tokens: settings.max_response_tokens ?? 2048,
   };
 
-  const response = await fetch(`${baseURL}/chat/completions`, {
+  const fetchOpts = {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${apiKey}`,
     },
     body: JSON.stringify(body),
-  });
+  };
+  if (signal) fetchOpts.signal = signal;
+
+  const response = await fetch(`${baseURL}/chat/completions`, fetchOpts);
 
   if (!response.ok) {
     const errText = await response.text();
@@ -120,7 +123,7 @@ async function callOpenAICompatibleAPI(messages, systemPrompt, settings, model) 
 /**
  * 直连 DeepSeek API（国内可用）
  */
-async function callDeepSeekAPI(messages, systemPrompt, settings) {
+async function callDeepSeekAPI(messages, systemPrompt, settings, signal) {
   const apiKey = process.env.DEEPSEEK_API_KEY;
   if (!apiKey) {
     throw new Error('未配置 DEEPSEEK_API_KEY');
@@ -138,14 +141,17 @@ async function callDeepSeekAPI(messages, systemPrompt, settings) {
     max_tokens: settings.max_response_tokens ?? 2048,
   };
 
-  const response = await fetch('https://api.deepseek.com/chat/completions', {
+  const fetchOpts = {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${apiKey}`,
     },
     body: JSON.stringify(body),
-  });
+  };
+  if (signal) fetchOpts.signal = signal;
+
+  const response = await fetch('https://api.deepseek.com/chat/completions', fetchOpts);
 
   if (!response.ok) {
     const errText = await response.text();
@@ -166,7 +172,7 @@ async function callDeepSeekAPI(messages, systemPrompt, settings) {
 /**
  * 直连 Anthropic API
  */
-async function callAnthropicAPI(messages, systemPrompt, settings, model) {
+async function callAnthropicAPI(messages, systemPrompt, settings, model, signal) {
   const apiKey = process.env.CLAUDE_API_KEY;
   if (!apiKey) {
     throw new Error('未配置 CLAUDE_API_KEY');
@@ -179,7 +185,7 @@ async function callAnthropicAPI(messages, systemPrompt, settings, model) {
     messages: messages.map(m => ({ role: m.role, content: m.content })),
   };
 
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
+  const fetchOpts = {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -187,7 +193,10 @@ async function callAnthropicAPI(messages, systemPrompt, settings, model) {
       'anthropic-version': '2023-06-01',
     },
     body: JSON.stringify(body),
-  });
+  };
+  if (signal) fetchOpts.signal = signal;
+
+  const response = await fetch('https://api.anthropic.com/v1/messages', fetchOpts);
 
   if (!response.ok) {
     const errText = await response.text();

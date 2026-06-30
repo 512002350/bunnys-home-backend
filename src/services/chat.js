@@ -11,13 +11,13 @@ const {
   getLatestHealth,
   getSessionCharacter,
 } = require('./supabase');
-const { callModel, estimateContextTokens } = require('./ai');
+const { callModel } = require('./ai');
 const { compressIfNeeded, searchRelevantMemories } = require('./memory');
 const stickerService = require('./stickers');
 const { lessonsPromptBlock, reflect } = require('./reflection');
 const { analyzeStance, toPromptBlock, getTemperatureAdjustment } = require('./stanceReasoner');
 const { buildCharacterPrompt, inferRelationshipStage, evolveCharacter, loadCharacter, buildKnownFactsBlock, buildSharedExperiencesBlock, getStageBehaviors } = require('./character');
-const { getProfile, extractFactsFromMessage, addKnownFact, addSharedExperience, recordConversation, getContextPromptBlock } = require('./userProfile');
+const { getProfile, extractFactsFromMessage, addKnownFact, recordConversation, getContextPromptBlock } = require('./userProfile');
 const skills = require('./skills');
 
 // ====== 输入行为事件缓存（前端检测到光标空闲/删了又打等信号时推送） ======
@@ -75,6 +75,9 @@ setInterval(() => {
  * @returns {object} { reply, thinking, model, messageId, sessionId, compressed, tokenInfo }
  */
 async function processChat(sessionId, message, model, opts = {}) {
+  // 辅助函数：检查是否已被中断
+  const isAborted = () => opts.abortSignal?.aborted || false;
+
   // 1. 存储用户消息（如果还没存）
   if (!opts.skipInsertUser) {
     await insertMessage(sessionId, 'user', message);
@@ -82,6 +85,7 @@ async function processChat(sessionId, message, model, opts = {}) {
 
   // 2. 加载可见历史消息
   const visibleMessages = await getVisibleMessages(sessionId);
+  if (isAborted()) return { aborted: true, sessionId };
 
   // 3. 加载系统设置 + 用户画像
   const settings = await getSettings();
@@ -102,6 +106,8 @@ async function processChat(sessionId, message, model, opts = {}) {
     stickerService.getStickers(),
     analyzeStance(message, currentMessages.slice(-6), relevantMemories).catch(() => null),
   ]);
+  if (isAborted()) return { aborted: true, sessionId };
+
   // 7. 确定角色：优先用请求中指定的，其次查 DB，最后用 default
   const characterId = opts.character
     || (await getSessionCharacter(sessionId).catch(() => null))
@@ -194,6 +200,8 @@ async function processChat(sessionId, message, model, opts = {}) {
     );
   }
 
+  if (isAborted()) return { aborted: true, sessionId };
+
   // 12. 根据立场推理微调 temperature
   const tempAdjust = getTemperatureAdjustment(stanceResult);
   const adjustedSettings = tempAdjust !== 0
@@ -212,15 +220,26 @@ async function processChat(sessionId, message, model, opts = {}) {
     messagesForAI.push({ role: 'user', content: message });
   }
 
-  // 14. 调用模型
+  // 14. 调用模型（透传 abortSignal）
   const memoriesForAI = relevantMemories.map(m => ({ summary: m.summary }));
-  const result = await callModel(
-    messagesForAI,
-    model || 'anthropic/claude-sonnet-4',
-    adjustedSettings,
-    systemPrompt,
-    memoriesForAI
-  );
+  let result;
+  try {
+    result = await callModel(
+      messagesForAI,
+      model || 'anthropic/claude-sonnet-4',
+      adjustedSettings,
+      systemPrompt,
+      memoriesForAI,
+      { signal: opts.abortSignal }
+    );
+  } catch (err) {
+    // 区分用户主动取消 vs 真正的错误
+    if (err.name === 'AbortError' || isAborted()) {
+      console.log('[Chat] AI 调用已被用户中断');
+      return { aborted: true, sessionId, compressed: compressResult.compressed };
+    }
+    throw err;
+  }
 
   // 15. 去除 Markdown 格式标记（**粗体**、__粗体__、~~删除线~~、`代码`）
   let replyContent = (result.content || '')

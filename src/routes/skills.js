@@ -207,8 +207,8 @@ router.post('/import', async (req, res) => {
 // 详情
 router.get('/:id', async (req, res) => {
   try {
-    const version = req.query.version ? parseInt(req.query.version) : null;
-    if (version) {
+    const version = req.query.version != null ? parseInt(req.query.version) : null;
+    if (version != null) {
       const v = await skills.getSkillVersion(req.params.id, version);
       res.json({ skill: v, version });
     } else {
@@ -280,7 +280,7 @@ router.get('/:id/diff', async (req, res) => {
   try {
     const v1 = parseInt(req.query.v1);
     const v2 = parseInt(req.query.v2);
-    if (!v1 || !v2) return res.status(400).json({ error: '请指定 v1 和 v2 参数' });
+    if (isNaN(v1) || isNaN(v2)) return res.status(400).json({ error: '请指定 v1 和 v2 参数' });
     const result = await skills.diff(req.params.id, v1, v2);
     res.json(result);
   } catch (err) {

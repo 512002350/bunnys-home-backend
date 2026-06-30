@@ -87,10 +87,19 @@ router.post('/chat', async (req, res, next) => {
     // 通知自主活动引擎：用户刚刚发了消息（重置空闲计时）
     noteUserActivity();
 
+    // 创建 AbortController，客户端断开时触发 abort → 取消正在进行的 AI 调用
+    const abortController = new AbortController();
+    req.on('close', () => {
+      if (!res.writableEnded) {
+        abortController.abort();
+      }
+    });
+
     const reply = await processChat(sessionId, message, model, {
       character,
       typingMetrics,
       imageDescription,
+      abortSignal: abortController.signal,
     });
     res.json(reply);
   } catch (err) {
@@ -204,6 +213,39 @@ router.post('/chat/compact', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// POST /api/chat/retract — 撤回最后一条用户消息及后续 AI 回复
+router.post('/chat/retract', async (req, res, next) => {
+  try {
+    const { sessionId } = req.body;
+    if (!sessionId) {
+      return res.status(400).json({ error: '缺少 sessionId' });
+    }
+
+    const { hideMessage, getVisibleMessages } = require('../services/supabase');
+
+    // 找到最后一条可见的用户消息
+    const visibleMessages = await getVisibleMessages(sessionId);
+    const lastUserIdx = [...visibleMessages].reverse().findIndex(m => m.role === 'user');
+
+    if (lastUserIdx === -1) {
+      return res.status(404).json({ error: '没有可撤回的用户消息' });
+    }
+
+    // 撤回该用户消息及之后的所有 AI 回复
+    const toHide = visibleMessages.slice(visibleMessages.length - 1 - lastUserIdx);
+    const hideIds = toHide.map(m => m.id);
+
+    for (const id of hideIds) {
+      await hideMessage(id);
+    }
+
+    console.log(`[Chat] 撤回 ${hideIds.length} 条消息: ${hideIds.join(', ')}`);
+    res.json({ ok: true, hidden: hideIds.length });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // POST /api/chat/retry — 重新生成 AI 回复（替换最后一条 AI 消息）
 router.post('/chat/retry', async (req, res, next) => {
   try {
@@ -224,14 +266,24 @@ router.post('/chat/retry', async (req, res, next) => {
       console.log(`[Chat] 隐藏旧回复 ${lastAiMsg.id}`);
     }
 
-    // 3. 找到最后一条用户消息（可见的）
+    // 2. 找到最后一条用户消息（可见的）
     const lastUserMsg = await getLastUserMessage(sessionId);
     if (!lastUserMsg) {
       return res.status(404).json({ error: '未找到可重试的用户消息' });
     }
 
-    // 4. 用同一用户消息重新处理
-    const reply = await processChat(sessionId, lastUserMsg.content, model);
+    // 3. 创建 AbortController，客户端断开时中止
+    const abortController = new AbortController();
+    req.on('close', () => {
+      if (!res.writableEnded) {
+        abortController.abort();
+      }
+    });
+
+    // 4. 用同一用户消息重新处理（透传 abortSignal）
+    const reply = await processChat(sessionId, lastUserMsg.content, model, {
+      abortSignal: abortController.signal,
+    });
 
     res.json({ ...reply, retried: true });
   } catch (err) {

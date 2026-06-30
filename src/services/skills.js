@@ -68,16 +68,8 @@ async function resolve(skillId, context = {}) {
     console.warn(`[Skills] 技能不存在: ${skillId}`);
     return '';
   }
-  if (!skill.enabled) return '';
-
+  if (skill.enabled === false) return '';
   return resolveVariables(skill.content, context);
-}
-
-/**
- * 解析裸模板字符串（不依赖 skill ID）
- */
-function resolveTemplate(template, context = {}) {
-  return resolveVariables(template, context);
 }
 
 /**
@@ -93,7 +85,7 @@ async function compose(compositionId, context = {}) {
     console.warn(`[Skills] 组合蓝图不存在: ${compositionId}`);
     return '';
   }
-  if (!comp.enabled) return '';
+  if (comp.enabled === false) return '';
 
   const separator = comp.separator || '\n\n';
   const blocks = [];
@@ -795,7 +787,6 @@ module.exports = {
 
   // 模板与组合
   resolve,
-  resolveTemplate,
   resolveVariables,
   compose,
   composeCustom,
