@@ -54,6 +54,29 @@ router.post('/chat', async (req, res, next) => {
   }
 });
 
+// POST /api/chat/compact — 手动触发记忆压缩
+router.post('/chat/compact', async (req, res, next) => {
+  try {
+    const { sessionId } = req.body;
+    if (!sessionId) return res.status(400).json({ error: '缺少 sessionId' });
+
+    const { compressIfNeeded } = require('../services/memory');
+    const { getVisibleMessages } = require('../services/supabase');
+    const messages = await getVisibleMessages(sessionId);
+    const result = await compressIfNeeded(messages, true); // force=true
+
+    res.json({
+      compressed: result.compressed,
+      totalTokens: result.totalTokens,
+      threshold: result.threshold,
+      newFacts: result.newFacts || 0,
+      message: result.compressed
+        ? `已压缩，生成 ${result.newFacts || 0} 条记忆`
+        : '当前未达到压缩阈值',
+    });
+  } catch (err) { next(err); }
+});
+
 // POST /api/chat/retry — 重新生成 AI 回复（替换最后一条 AI 消息）
 router.post('/chat/retry', async (req, res, next) => {
   try {

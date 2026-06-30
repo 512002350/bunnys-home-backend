@@ -191,7 +191,7 @@ async function searchRelevantMemories(query, limit = 10) {
  * 全量检查：如果上下文 token 超过阈值，执行压缩
  * 在组装上下文之前调用
  */
-async function compressIfNeeded(visibleMessages) {
+async function compressIfNeeded(visibleMessages, force = false) {
   try {
     const settings = await getSettings();
     const memories = await getMemories();
@@ -205,8 +205,11 @@ async function compressIfNeeded(visibleMessages) {
 
     const threshold = settings.compression_threshold_tokens || 8000;
 
-    if (totalTokens < threshold) {
+    if (!force && totalTokens < threshold) {
       return { compressed: false, totalTokens, threshold };
+    }
+    if (force) {
+      console.log('[Memory] 手动触发压缩（force=true）');
     }
 
     console.log(`[Memory] Token 超阈值: ${totalTokens}/${threshold}，开始压缩...`);
