@@ -34,6 +34,14 @@ const DEFAULT_PROFILE = {
   // 她观察到的模式（不是标签，是观察）
   observed_patterns: [],      // [{pattern, evidence_count, confidence, created_at}]
 
+  // 当前上下文——跨会话传递的关键信息
+  current_context: {
+    summary: '',              // 简短摘要
+    key_points: [],           // 关键事实/决定
+    last_updated: null,
+    source_session: null,
+  },
+
   // 她正在了解中的事（还未确认，她在试探）
   things_she_is_figuring_out: [],
 
@@ -248,6 +256,40 @@ function getProfile() {
   return profile;
 }
 
+/**
+ * 保存跨会话的关键上下文
+ * @param {object} context - { summary, key_points, sessionId }
+ */
+function preserveContext(context) {
+  profile.current_context = {
+    summary: context.summary || '',
+    key_points: context.key_points || [],
+    last_updated: new Date().toISOString(),
+    source_session: context.sessionId || null,
+  };
+  saveProfile();
+  console.log(`[UserProfile] 关键上下文已保存：${context.key_points?.length || 0} 个关键点`);
+}
+
+/**
+ * 获取当前保存的上下文提示词块
+ */
+function getContextPromptBlock() {
+  const ctx = profile.current_context;
+  if (!ctx?.summary && (!ctx?.key_points || ctx.key_points.length === 0)) {
+    return '';
+  }
+  let block = '\n\n# 你们最近的对话要点（跨会话保留）';
+  if (ctx.summary) {
+    block += `\n${ctx.summary}`;
+  }
+  if (ctx.key_points && ctx.key_points.length > 0) {
+    block += '\n\n关键信息：\n' + ctx.key_points.map(p => `- ${p}`).join('\n');
+  }
+  block += '\n\n自然地融入对话，不要逐条复述这些内容。';
+  return block;
+}
+
 module.exports = {
   getProfile,
   addKnownFact,
@@ -255,5 +297,7 @@ module.exports = {
   extractFactsFromMessage,
   recordConversation,
   markRelationshipMilestone,
+  preserveContext,
+  getContextPromptBlock,
   loadProfile,
 };

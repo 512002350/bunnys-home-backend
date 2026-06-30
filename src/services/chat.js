@@ -17,7 +17,7 @@ const stickerService = require('./stickers');
 const { lessonsPromptBlock, reflect } = require('./reflection');
 const { analyzeStance, toPromptBlock, getTemperatureAdjustment } = require('./stanceReasoner');
 const { buildCharacterPrompt, inferRelationshipStage, evolveCharacter, loadCharacter } = require('./character');
-const { getProfile, extractFactsFromMessage, addKnownFact, addSharedExperience, recordConversation } = require('./userProfile');
+const { getProfile, extractFactsFromMessage, addKnownFact, addSharedExperience, recordConversation, getContextPromptBlock } = require('./userProfile');
 
 /**
  * 处理一条用户消息，返回 AI 回复的完整结果
@@ -67,8 +67,14 @@ async function processChat(sessionId, message, model, opts = {}) {
   const relationshipStage = inferRelationshipStage(userProfile);
   const characterPrompt = buildCharacterPrompt(userProfile, relationshipStage);
 
-  // 9. 组装完整系统提示词：角色身份 + 叙事风格 + 上下文注入
+  // 9. 组装完整系统提示词：角色身份 + 跨会话上下文 + 叙事风格
   let systemPrompt = characterPrompt;
+
+  // 注入跨会话保留的关键上下文
+  const contextBlock = getContextPromptBlock();
+  if (contextBlock) {
+    systemPrompt += contextBlock;
+  }
 
   // 追加叙事风格（如果用户配置了）
   const narrativeStyle = settings.system_prompt || '';

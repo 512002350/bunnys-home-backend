@@ -54,7 +54,82 @@ router.post('/chat', async (req, res, next) => {
   }
 });
 
-// POST /api/chat/compact — 手动触发记忆压缩
+// POST /api/chat/extract-context — 提取并保存关键上下文（跨会话保留）
+router.post('/chat/extract-context', async (req, res, next) => {
+  try {
+    const { sessionId } = req.body;
+    if (!sessionId) return res.status(400).json({ error: '缺少 sessionId' });
+
+    const { getVisibleMessages } = require('../services/supabase');
+    const { callModel } = require('../services/ai');
+    const { getSettings } = require('../services/supabase');
+    const { preserveContext } = require('../services/userProfile');
+
+    const messages = await getVisibleMessages(sessionId);
+    if (messages.length < 2) {
+      return res.json({ ok: false, message: '对话太短，无需提取上下文' });
+    }
+
+    // 取最近 10 轮对话
+    const recent = messages.slice(-20);
+    const conversationText = recent.map(m => `${m.role === 'user' ? '我' : '对方'}：${m.content}`).join('\n');
+
+    const settings = await getSettings();
+
+    // 用便宜模型提取关键上下文
+    const extractionPrompt = `你是一个对话摘要助手。请从以下对话中提取需要在未来会话中记住的关键信息。只提取真正重要的内容，不要面面俱到。
+
+提取格式（严格JSON）：
+{
+  "summary": "一句话概括最近对话的核心主题或状态（30字以内）",
+  "key_points": ["关键事实1", "关键事实2", ...]  // 最多5条，每条15字以内
+}
+
+注意事项：
+- 只提取对未来对话有持续影响的信息
+- 忽略临时性的闲聊内容
+- 如果有未完成的话题或决定，标记出来
+- 保持客观，不要带入角色语气
+
+对话内容：
+${conversationText}`;
+
+    const result = await callModel(
+      [{ role: 'user', content: extractionPrompt }],
+      'deepseek-chat',
+      { ...settings, temperature: 0.3, max_response_tokens: 500 }
+    );
+
+    // 解析 JSON
+    let extracted;
+    try {
+      const content = result.content || '';
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      extracted = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
+    } catch (_) {
+      extracted = null;
+    }
+
+    if (!extracted?.key_points?.length) {
+      return res.json({ ok: false, message: '未能提取到关键信息' });
+    }
+
+    preserveContext({
+      summary: extracted.summary || '',
+      key_points: extracted.key_points.slice(0, 5),
+      sessionId,
+    });
+
+    res.json({
+      ok: true,
+      summary: extracted.summary,
+      key_points: extracted.key_points,
+      message: `已保存 ${extracted.key_points.length} 条关键信息，新会话将自动携带`,
+    });
+  } catch (err) { next(err); }
+});
+
+// POST /api/chat/compact — 手动触发内存压缩
 router.post('/chat/compact', async (req, res, next) => {
   try {
     const { sessionId } = req.body;
