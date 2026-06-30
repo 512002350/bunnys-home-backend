@@ -1,37 +1,123 @@
 /**
  * 表情包服务
  *
- * 上传时视觉模型看一眼写好描述 → 之后只读文字描述来挑表情 → 不再看图
- * 图片保存到本地 public/uploads/stickers/ 目录，通过 /uploads/stickers/xxx 访问
+ * 上传时视觉模型看一眼写好描述 → 图片以 base64 存 DB（兼容 Vercel 无状态部署）
+ * 支持本地搜索 + API盒子外部搜索
  */
 
-const path = require('path');
-const fs = require('fs');
 const { getSupabase } = require('./supabase');
 const { describeImage } = require('./imageVision');
+const skills = require('./skills');
 
 /**
  * 获取所有表情包
  */
 async function getStickers() {
   const db = getSupabase();
-  if (!db) return []; // 无数据库时返回空
+  if (!db) return [];
   const { data, error } = await db
     .from('stickers')
     .select('*')
     .order('name', { ascending: true });
   if (error) {
-    if (error.code === '42P01') return []; // 表还没创建
+    if (error.code === '42P01') return [];
     throw error;
   }
   return data || [];
 }
 
-const skills = require('./skills');
+/**
+ * 搜索本地表情包（按名字/描述模糊匹配）
+ */
+async function searchStickers(query) {
+  if (!query || !query.trim()) return getStickers();
+  const q = query.trim();
+  const db = getSupabase();
+  if (!db) return [];
+
+  // ilike 模糊搜索名字和描述
+  const { data, error } = await db
+    .from('stickers')
+    .select('*')
+    .or(`name.ilike.%${q}%,descr.ilike.%${q}%`)
+    .order('name', { ascending: true })
+    .limit(20);
+
+  if (error) {
+    if (error.code === '42P01') return [];
+    throw error;
+  }
+  return data || [];
+}
 
 /**
- * 上传表情包 —— 调视觉模型自动描述 → 存文件 → 入库
- * @param {string} imageBase64 - 图片的 base64 编码（不含 data:image/xxx;base64, 前缀）
+ * API盒子 —— 中文表情包外部搜索
+ * 文档: https://www.cnapihz.com
+ * 环境变量 APIHEZI_ID / APIHEZI_KEY（可选，不配则不启用外源搜索）
+ */
+const APIHEZI_ID = process.env.APIHEZI_ID || '';
+const APIHEZI_KEY = process.env.APIHEZI_KEY || '';
+const APIHEZI_BASE = 'https://cn.apihz.cn/api/img/xqbbq.php';
+
+async function searchExternalStickers(query) {
+  if (!query || !query.trim()) return [];
+  if (!APIHEZI_ID || !APIHEZI_KEY) return []; // 未配置则不启用
+
+  try {
+    const url = `${APIHEZI_BASE}?id=${APIHEZI_ID}&key=${APIHEZI_KEY}&type=2&words=${encodeURIComponent(query.trim())}&limit=10`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    const json = await res.json();
+
+    if (json.code !== 200 || !json.res?.length) return [];
+
+    return json.res.map((imgUrl, i) => ({
+      id: `ext-${Date.now()}-${i}`,
+      name: `${query}${i + 1}`,
+      url: imgUrl,
+      descr: `来自API盒子: ${query}`,
+      external: true,
+    }));
+  } catch (err) {
+    console.warn('[Stickers] 外部搜索失败:', err.message);
+    return [];
+  }
+}
+
+/**
+ * 添加外部表情包到本地库
+ * @param {string} imageUrl - 外部图片 URL
+ * @param {string} name - 表情名
+ * @param {string} descr - 描述
+ */
+async function addExternalSticker(imageUrl, name, descr) {
+  const db = getSupabase();
+  if (!db) throw new Error('数据库不可用');
+
+  // 下载外部图片并转 base64
+  let base64;
+  try {
+    const res = await fetch(imageUrl, { signal: AbortSignal.timeout(10000) });
+    const buf = await res.arrayBuffer();
+    const mime = res.headers.get('content-type') || 'image/png';
+    base64 = `data:${mime};base64,${Buffer.from(buf).toString('base64')}`;
+  } catch (err) {
+    throw new Error('下载外部图片失败: ' + err.message);
+  }
+
+  const id = name.toLowerCase().replace(/\s+/g, '-').replace(/[^\w一-鿿-]/g, '');
+  const { data: sticker, error } = await db
+    .from('stickers')
+    .upsert({ id, name, url: base64, descr })
+    .select()
+    .single();
+
+  if (error) throw error;
+  return sticker;
+}
+
+/**
+ * 上传表情包 —— 视觉模型自动描述 → base64 入库
+ * @param {string} imageBase64 - 图片的 base64 编码（不含 data: 前缀）
  * @param {string} mimeType - 图片 MIME 类型，默认 'image/png'
  */
 async function uploadSticker(imageBase64, mimeType = 'image/png') {
@@ -56,32 +142,20 @@ async function uploadSticker(imageBase64, mimeType = 'image/png') {
     throw new Error('视觉模型未能识别表情包名字');
   }
 
-  // 2. 生成 id 和文件名
+  // 2. 生成 id
   const id = name.toLowerCase().replace(/\s+/g, '-').replace(/[^\w一-鿿-]/g, '');
-  const ext = mimeType.split('/')[1] || 'png';
-  const filename = `${id}.${ext}`;
 
-  // 3. 保存图片到本地 public/uploads/stickers/
-  const stickersDir = path.join(__dirname, '..', '..', 'public', 'uploads', 'stickers');
-  if (!fs.existsSync(stickersDir)) {
-    fs.mkdirSync(stickersDir, { recursive: true });
-  }
-  const filePath = path.join(stickersDir, filename);
-  const buffer = Buffer.from(imageBase64, 'base64');
-  fs.writeFileSync(filePath, buffer);
-
-  // 4. 存储 URL 路径（可公开访问的相对路径）
-  const url = `/uploads/stickers/${filename}`;
+  // 3. 构造 base64 data URL（直接入库，不写文件）
+  const dataUrl = `data:${mimeType};base64,${imageBase64}`;
 
   const db = getSupabase();
   if (!db) {
-    // 无数据库模式：返回构造的 sticker 对象但不存储
-    return { id, name, url, descr: desc };
+    return { id, name, url: dataUrl, descr: desc };
   }
 
   const { data: sticker, error } = await db
     .from('stickers')
-    .upsert({ id, name, url, descr: desc })
+    .upsert({ id, name, url: dataUrl, descr: desc })
     .select()
     .single();
 
@@ -126,7 +200,6 @@ async function stickerPromptBlock(stickers) {
 
 /**
  * 替换回复中的 [sticker:名字] 标记为前端能识别的图片标记
- * 前端渲染时把 [STICKER_IMG]...[/STICKER_IMG] 替换成 <img> 标签
  */
 const STICKER_MARK = /\[sticker[:：]\s*([^\]\n]+?)\s*\]/g;
 
@@ -144,6 +217,9 @@ function replaceStickerTags(text, stickers) {
 
 module.exports = {
   getStickers,
+  searchStickers,
+  searchExternalStickers,
+  addExternalSticker,
   uploadSticker,
   deleteSticker,
   stickerPromptBlock,

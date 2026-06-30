@@ -36,6 +36,34 @@ router.delete('/stickers/:id', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// GET /api/stickers/search?q= — 本地搜索表情
+router.get('/stickers/search', async (req, res, next) => {
+  try {
+    const results = await stickerService.searchStickers(req.query.q || '');
+    res.json({ stickers: results });
+  } catch (err) { next(err); }
+});
+
+// GET /api/stickers/external/search?q= — API盒子外部搜索
+router.get('/stickers/external/search', async (req, res, next) => {
+  try {
+    const results = await stickerService.searchExternalStickers(req.query.q || '');
+    res.json({ stickers: results });
+  } catch (err) { next(err); }
+});
+
+// POST /api/stickers/external/add — 添加外部表情到本地库
+router.post('/stickers/external/add', async (req, res, next) => {
+  try {
+    const { imageUrl, name, descr } = req.body;
+    if (!imageUrl || !name) {
+      return res.status(400).json({ error: '缺少 imageUrl 或 name' });
+    }
+    const sticker = await stickerService.addExternalSticker(imageUrl, name, descr || '');
+    res.json({ sticker });
+  } catch (err) { next(err); }
+});
+
 // POST /api/chat/upload-image — 聊天图片上传（拍照/图库 → DeepSeek 识图 → 存文件）
 router.post('/chat/upload-image', async (req, res, next) => {
   try {
