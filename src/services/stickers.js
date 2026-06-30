@@ -51,39 +51,79 @@ async function searchStickers(query) {
 }
 
 /**
- * 搜狗表情包外部搜索（通过 API盒子 搜狗版免费接口）
- * 文档: https://api.aa1.cn/doc/apihzbqbsougou.html
+ * API盒子·官方资源库版 — 自建图床 (res.apihz.cn)，比搜狗CDN稳定得多
+ * 文档: https://api.aa1.cn/doc/apihzbqb.html
  *
  * 默认使用公共测试号（id=88888888, key=88888888），免费无需注册。
  * 如公共号被限流，可去 cn.apihz.com 注册获取自己的 ID+KEY 填入 .env。
  */
 const APIHEZI_ID = process.env.APIHEZI_ID || '88888888';
 const APIHEZI_KEY = process.env.APIHEZI_KEY || '88888888';
-const SOGOU_API = 'https://cn.apihz.cn/api/img/apihzbqbsougou.php';
+const APIHEZI_BQB_API = 'https://cn.apihz.cn/api/img/apihzbqb.php';
+
+/**
+ * GIPHY Sticker API — 比搜狗 CDN 稳定得多
+ * 免费 API key 在 https://developers.giphy.com/ 注册获取
+ * 设置环境变量 GIPHY_API_KEY 即可启用
+ */
+const GIPHY_API_KEY = process.env.GIPHY_API_KEY || '';
+const GIPHY_API = 'https://api.giphy.com/v1/stickers/search';
+
+async function searchGiphyStickers(query) {
+  if (!GIPHY_API_KEY || !query?.trim()) return [];
+
+  try {
+    const url = `${GIPHY_API}?api_key=${GIPHY_API_KEY}&q=${encodeURIComponent(query.trim())}&limit=20&rating=g&lang=zh-CN`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    const json = await res.json();
+
+    if (json.meta?.status !== 200 || !json.data?.length) {
+      if (json.meta?.msg) console.warn('[Stickers] GIPHY:', json.meta.msg);
+      return [];
+    }
+
+    return json.data.map((gif, i) => ({
+      id: `ext-giphy-${gif.id || i}`,
+      name: gif.title || `${query}${i + 1}`,
+      url: gif.images?.fixed_height?.url || gif.images?.original?.url || '',
+      descr: `GIPHY: ${query}`,
+      external: true,
+    })).filter(s => s.url);
+  } catch (err) {
+    console.warn('[Stickers] GIPHY 搜索失败:', err.message);
+    return [];
+  }
+}
 
 async function searchExternalStickers(query) {
   if (!query || !query.trim()) return [];
 
+  // 优先用 GIPHY（图源稳定），没有 key 则回退搜狗
+  if (GIPHY_API_KEY) {
+    const giphyResults = await searchGiphyStickers(query);
+    if (giphyResults.length > 0) return giphyResults;
+  }
+
+  // 回退：API盒子官方资源库版（自建图床，稳定）
   try {
-    const url = `${SOGOU_API}?id=${APIHEZI_ID}&key=${APIHEZI_KEY}&words=${encodeURIComponent(query.trim())}`;
+    const url = `${APIHEZI_BQB_API}?id=${APIHEZI_ID}&key=${APIHEZI_KEY}&type=2&words=${encodeURIComponent(query.trim())}&limit=20`;
     const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
     const json = await res.json();
 
     if (json.code !== 200 || !json.res?.length) {
-      if (json.msg) console.warn('[Stickers] 搜狗API:', json.msg);
+      if (json.msg) console.warn('[Stickers] API盒子:', json.msg);
       return [];
     }
 
-    // 搜狗返回较多，取前 20 条
     return json.res.slice(0, 20).map((imgUrl, i) => ({
-      id: `ext-sogou-${Date.now()}-${i}`,
+      id: `ext-bqb-${Date.now()}-${i}`,
       name: `${query}${i + 1}`,
       url: imgUrl,
-      descr: `搜狗表情: ${query}`,
+      descr: `表情: ${query}`,
       external: true,
     }));
   } catch (err) {
-    console.warn('[Stickers] 搜狗搜索失败:', err.message);
+    console.warn('[Stickers] API盒子搜索失败:', err.message);
     return [];
   }
 }
@@ -98,15 +138,46 @@ async function addExternalSticker(imageUrl, name, descr) {
   const db = getSupabase();
   if (!db) throw new Error('数据库不可用');
 
-  // 下载外部图片并转 base64
+  // 下载外部图片并转 base64（带重试）
   let base64;
-  try {
-    const res = await fetch(imageUrl, { signal: AbortSignal.timeout(10000) });
-    const buf = await res.arrayBuffer();
-    const mime = res.headers.get('content-type') || 'image/png';
-    base64 = `data:${mime};base64,${Buffer.from(buf).toString('base64')}`;
-  } catch (err) {
-    throw new Error('下载外部图片失败: ' + err.message);
+  const MAX_RETRIES = 2;
+  const TIMEOUT_MS = 20000;
+  let lastError;
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+      const res = await fetch(imageUrl, {
+        signal: controller.signal,
+        headers: {
+          'User-Agent': 'BunnysHome/1.0 (sticker-bot)',
+          'Accept': 'image/*',
+        },
+      });
+      clearTimeout(timer);
+
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+
+      const buf = await res.arrayBuffer();
+      if (buf.byteLength === 0) throw new Error('下载的图片为空');
+
+      const mime = res.headers.get('content-type') || 'image/png';
+      base64 = `data:${mime};base64,${Buffer.from(buf).toString('base64')}`;
+      break; // 成功，跳出重试循环
+    } catch (err) {
+      lastError = err;
+      if (attempt < MAX_RETRIES) {
+        // 等 1 秒再试
+        await new Promise(r => setTimeout(r, 1000));
+      }
+    }
+  }
+
+  if (!base64) {
+    throw new Error('下载外部图片失败: ' + (lastError?.message || '未知错误'));
   }
 
   const id = name.toLowerCase().replace(/\s+/g, '-').replace(/[^\w一-鿿-]/g, '');
