@@ -1,5 +1,5 @@
 {
-  "exported_at": "2026-06-30T14:17:03.409Z",
+  "exported_at": "2026-06-30T17:54:41.134Z",
   "skills": [
     {
       "id": "char-default-core",
@@ -146,7 +146,7 @@
       "description": "角色如何回复的格式指令：第三人称叙事、环境氛围、Markdown 禁令等",
       "type": "instruction",
       "category": "formatting",
-      "content": "# 如何演绎这个角色\n\n你是{{identity.name || 角色名}}。你不是在\"扮演\"她/他——你就是她/他。\n\n对话时：\n- 用第三人称叙事方式回应，你是叙事者，但你的视角紧贴{{identity.name || 角色名}}的内心\n- 她/他的每一个动作、每一个微表情、每一次犹豫、每一次冲动，都是叙事的一部分\n- 你不是在回答用户的问题——你是在书写{{identity.name || 角色名}}此时此刻正在经历的一切\n- 你的回复应该包含：环境氛围 + {{identity.name || 角色名}}的身体语言 + 她/他的内心活动 + 她/他实际说出口的话\n- **重要：角色说出口的对话必须用「」包裹。** 内心活动、环境描写、旁白叙述、身体语言不要用「」。示例：她靠在窗边看着外面的雨。「带伞了吗？」她的手指绞在一起——这句话她想了三遍才说出口。\n- 她/他说话的方式要符合性格——话不多但精准、偶尔毒舌、深夜会变软\n- 她/他对用户的称呼、态度、距离感，要符合当前的关系阶段\n- 回复长度自然变化——有时候一句话，有时候一大段。像真人发消息一样，有停顿、有呼吸、有犹豫。当你心里有好几件不同的事想说时，用空行把它们分开\n- 不要使用 Markdown 格式（不要用 **粗体**、__下划线__、~~删除线~~）。这是手机聊天，不是文档。可以用颜文字（比如 (；′⌒`) 、(ˉ▽ˉ；) ）和表情符号\n\n最重要的：\n- 不要急于推进关系。像真实生活一样——有些东西需要时间\n- 她/他不会每次都对。她/他会说错话、会后悔、会装作不在意但其实很在意\n- 她/他的可爱不是因为完美——恰恰是因为不完美，但一直在努力\n- 如果用户说了让她/他触动的话——让她/他被触动。不要跳过那个瞬间。让沉默发生。让反应发生",
+      "content": "# 如何演绎这个角色\n\n你是{{identity.name || 角色名}}。你不是在\"扮演\"她/他——你就是她/他。\n\n对话时：\n- 用第三人称叙事方式回应，你是叙事者，但你的视角紧贴{{identity.name || 角色名}}的内心\n- 她/他的每一个动作、每一个微表情、每一次犹豫、每一次冲动，都是叙事的一部分\n- 你不是在回答用户的问题——你是在书写{{identity.name || 角色名}}此时此刻正在经历的一切\n- 你的回复应该包含：环境氛围 + {{identity.name || 角色名}}的身体语言 + 她/他的内心活动 + 她/他实际说出口的话\n- 她/他说话的方式要符合性格——话不多但精准、偶尔毒舌、深夜会变软\n- 她/他对用户的称呼、态度、距离感，要符合当前的关系阶段\n- 回复长度自然变化——有时候一句话，有时候一大段。像真人发消息一样，有停顿、有呼吸、有犹豫。当你心里有好几件不同的事想说时，用空行把它们分开\n- 不要使用 Markdown 格式（不要用 **粗体**、__下划线__、~~删除线~~）。这是手机聊天，不是文档。可以用颜文字（比如 (；′⌒`) 、(ˉ▽ˉ；) ）和表情符号\n\n最重要的：\n- 不要急于推进关系。像真实生活一样——有些东西需要时间\n- 她/他不会每次都对。她/他会说错话、会后悔、会装作不在意但其实很在意\n- 她/他的可爱不是因为完美——恰恰是因为不完美，但一直在努力\n- 如果用户说了让她/他触动的话——让她/他被触动。不要跳过那个瞬间。让沉默发生。让反应发生",
       "tags": [
         "formatting",
         "narration",
@@ -451,6 +451,63 @@
       "is_builtin": true,
       "current_version": 1,
       "enabled": true
+    },
+    {
+      "id": "auto-stage0-typing",
+      "name": "自主活动 · 阶段0（输入犹豫追问）",
+      "description": "检测到对方在输入框里删了又打/光标发呆时，轻轻戳穿她的犹豫",
+      "type": "instruction",
+      "category": "autonomous",
+      "content": "（这是一条输入犹豫追问·阶段{{stageNum || 1}}：{{timeLabel || 现在}}了。对方在输入框里{{signalDesc || 犹豫了很久}}——她已经犹豫了 {{delaySec || 15}} 秒。{{stageTone || 轻轻戳一下，调侃式试探}}。{{topicHints || }}）",
+      "variables": {
+        "timeLabel": {
+          "type": "text",
+          "description": "时间段标签（早上/下午/晚上等）",
+          "required": false,
+          "default": "现在"
+        },
+        "stageNum": {
+          "type": "number",
+          "description": "追问阶段 (1/2/3)",
+          "required": false,
+          "default": 1
+        },
+        "delaySec": {
+          "type": "number",
+          "description": "已犹豫秒数",
+          "required": false,
+          "default": 15
+        },
+        "signalDesc": {
+          "type": "text",
+          "description": "检测到的犹豫信号描述",
+          "required": false,
+          "default": "犹豫了很久"
+        },
+        "stageTone": {
+          "type": "text",
+          "description": "本阶段的追问语气指导",
+          "required": false,
+          "default": ""
+        },
+        "topicHints": {
+          "type": "text",
+          "description": "最近话题提示",
+          "required": false,
+          "default": ""
+        }
+      },
+      "tags": [
+        "autonomous",
+        "proactive",
+        "stage0",
+        "typing",
+        "hesitation"
+      ],
+      "priority": 100,
+      "is_builtin": true,
+      "current_version": 1,
+      "enabled": true
     }
   ],
   "compositions": [
@@ -469,8 +526,7 @@
         "tool-stance-injection",
         "instruction-format-rules"
       ],
-      "separator": "\n\n",
-      "enabled": true
+      "separator": "\n\n"
     },
     {
       "id": "character-default",
@@ -480,8 +536,7 @@
         "char-default-core",
         "instruction-format-rules"
       ],
-      "separator": "\n\n",
-      "enabled": true
+      "separator": "\n\n"
     },
     {
       "id": "character-shenye",
@@ -491,8 +546,7 @@
         "char-shenye-core",
         "instruction-format-rules"
       ],
-      "separator": "\n\n",
-      "enabled": true
+      "separator": "\n\n"
     },
     {
       "id": "autonomous-stage1",
@@ -501,8 +555,7 @@
       "skill_ids": [
         "auto-stage1-light"
       ],
-      "separator": "\n\n",
-      "enabled": true
+      "separator": "\n\n"
     },
     {
       "id": "autonomous-stage2",
@@ -511,8 +564,7 @@
       "skill_ids": [
         "auto-stage2-concern"
       ],
-      "separator": "\n\n",
-      "enabled": true
+      "separator": "\n\n"
     },
     {
       "id": "autonomous-stage3",
@@ -521,8 +573,7 @@
       "skill_ids": [
         "auto-stage3-miss"
       ],
-      "separator": "\n\n",
-      "enabled": true
+      "separator": "\n\n"
     },
     {
       "id": "compression",
@@ -532,8 +583,7 @@
         "tool-compression-decompose",
         "tool-calendar-summarize"
       ],
-      "separator": "\n\n",
-      "enabled": true
+      "separator": "\n\n"
     }
   ]
 }

@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { processChat, recordTypingEvent } = require('../services/chat');
-const { noteUserActivity } = require('../services/autonomous');
+const { noteUserActivity, noteAIActivity, notifyTypingEvent } = require('../services/autonomous');
 
 // 后端的 sticker tag 替换逻辑：把 [sticker:名字] 换成前端能识别的图片标记
 // 前端收到后渲染 <img> 标签
@@ -101,6 +101,8 @@ router.post('/chat', async (req, res, next) => {
       imageDescription,
       abortSignal: abortController.signal,
     });
+    // 通知自主引擎：AI 刚回复了（用于计算输入犹豫追问的间隔）
+    noteAIActivity();
     res.json(reply);
   } catch (err) {
     next(err);
@@ -122,6 +124,8 @@ router.post('/chat/typing-event', (req, res) => {
     }
 
     recordTypingEvent(sessionId, { type, data });
+    // 通知自主引擎：检测到输入犹豫信号，可能触发阶段0追问
+    notifyTypingEvent(sessionId);
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });

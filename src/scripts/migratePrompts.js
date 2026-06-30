@@ -476,6 +476,24 @@ const SKILLS = [
     tags: ['autonomous', 'proactive', 'stage3', 'miss'],
     priority: 100,
   },
+  {
+    id: 'auto-stage0-typing',
+    name: '自主活动 · 阶段0（输入犹豫追问）',
+    description: '检测到对方在输入框里删了又打/光标发呆时，轻轻戳穿她的犹豫',
+    type: 'instruction',
+    category: 'autonomous',
+    content: '（这是一条输入犹豫追问·阶段{{stageNum || 1}}：{{timeLabel || 现在}}了。对方在输入框里{{signalDesc || 犹豫了很久}}——她已经犹豫了 {{delaySec || 15}} 秒。{{stageTone || 轻轻戳一下，调侃式试探}}。{{topicHints || }}）',
+    variables: {
+      timeLabel: { type: 'text', description: '时间段标签（早上/下午/晚上等）', required: false, default: '现在' },
+      stageNum: { type: 'number', description: '追问阶段 (1/2/3)', required: false, default: 1 },
+      delaySec: { type: 'number', description: '已犹豫秒数', required: false, default: 15 },
+      signalDesc: { type: 'text', description: '检测到的犹豫信号描述', required: false, default: '犹豫了很久' },
+      stageTone: { type: 'text', description: '本阶段的追问语气指导', required: false, default: '' },
+      topicHints: { type: 'text', description: '最近话题提示', required: false, default: '' },
+    },
+    tags: ['autonomous', 'proactive', 'stage0', 'typing', 'hesitation'],
+    priority: 100,
+  },
 ];
 
 // ========== 默认组合蓝图 ==========

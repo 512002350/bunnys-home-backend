@@ -28,6 +28,15 @@ const TYPING_EVENT_TTL = 5 * 60 * 1000; // 5 分钟后过期
 /**
  * 记录一条输入行为事件（由前端在检测到犹豫信号时主动推送）
  */
+/**
+ * 查看指定会话的待处理输入事件（不消费）
+ */
+function peekTypingEvents(sessionId) {
+  const events = typingEventCache.get(sessionId) || [];
+  const now = Date.now();
+  return events.filter(e => (now - e.timestamp) < TYPING_EVENT_TTL);
+}
+
 function recordTypingEvent(sessionId, event) {
   if (!typingEventCache.has(sessionId)) {
     typingEventCache.set(sessionId, []);
@@ -420,4 +429,4 @@ async function buildLegacySystemPrompt(
   return systemPrompt;
 }
 
-module.exports = { processChat, recordTypingEvent };
+module.exports = { processChat, recordTypingEvent, peekTypingEvents };
