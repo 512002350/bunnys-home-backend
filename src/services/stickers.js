@@ -51,34 +51,39 @@ async function searchStickers(query) {
 }
 
 /**
- * API盒子 —— 中文表情包外部搜索
- * 文档: https://www.cnapihz.com
- * 环境变量 APIHEZI_ID / APIHEZI_KEY（可选，不配则不启用外源搜索）
+ * 搜狗表情包外部搜索（通过 API盒子 搜狗版免费接口）
+ * 文档: https://api.aa1.cn/doc/apihzbqbsougou.html
+ *
+ * 默认使用公共测试号（id=88888888, key=88888888），免费无需注册。
+ * 如公共号被限流，可去 cn.apihz.com 注册获取自己的 ID+KEY 填入 .env。
  */
-const APIHEZI_ID = process.env.APIHEZI_ID || '';
-const APIHEZI_KEY = process.env.APIHEZI_KEY || '';
-const APIHEZI_BASE = 'https://cn.apihz.cn/api/img/xqbbq.php';
+const APIHEZI_ID = process.env.APIHEZI_ID || '88888888';
+const APIHEZI_KEY = process.env.APIHEZI_KEY || '88888888';
+const SOGOU_API = 'https://cn.apihz.cn/api/img/apihzbqbsougou.php';
 
 async function searchExternalStickers(query) {
   if (!query || !query.trim()) return [];
-  if (!APIHEZI_ID || !APIHEZI_KEY) return []; // 未配置则不启用
 
   try {
-    const url = `${APIHEZI_BASE}?id=${APIHEZI_ID}&key=${APIHEZI_KEY}&type=2&words=${encodeURIComponent(query.trim())}&limit=10`;
+    const url = `${SOGOU_API}?id=${APIHEZI_ID}&key=${APIHEZI_KEY}&words=${encodeURIComponent(query.trim())}`;
     const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
     const json = await res.json();
 
-    if (json.code !== 200 || !json.res?.length) return [];
+    if (json.code !== 200 || !json.res?.length) {
+      if (json.msg) console.warn('[Stickers] 搜狗API:', json.msg);
+      return [];
+    }
 
-    return json.res.map((imgUrl, i) => ({
-      id: `ext-${Date.now()}-${i}`,
+    // 搜狗返回较多，取前 20 条
+    return json.res.slice(0, 20).map((imgUrl, i) => ({
+      id: `ext-sogou-${Date.now()}-${i}`,
       name: `${query}${i + 1}`,
       url: imgUrl,
-      descr: `来自API盒子: ${query}`,
+      descr: `搜狗表情: ${query}`,
       external: true,
     }));
   } catch (err) {
-    console.warn('[Stickers] 外部搜索失败:', err.message);
+    console.warn('[Stickers] 搜狗搜索失败:', err.message);
     return [];
   }
 }
