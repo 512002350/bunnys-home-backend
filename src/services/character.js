@@ -365,6 +365,8 @@ module.exports = {
   getCharacter,
   listCharacters,
   buildCharacterPrompt,
+  buildKnownFactsBlock,
+  buildSharedExperiencesBlock,
   inferRelationshipStage,
   getStageBehaviors,
   evolveCharacter,

@@ -16,7 +16,7 @@ const { compressIfNeeded, searchRelevantMemories } = require('./memory');
 const stickerService = require('./stickers');
 const { lessonsPromptBlock, reflect } = require('./reflection');
 const { analyzeStance, toPromptBlock, getTemperatureAdjustment } = require('./stanceReasoner');
-const { buildCharacterPrompt, inferRelationshipStage, evolveCharacter, loadCharacter } = require('./character');
+const { buildCharacterPrompt, inferRelationshipStage, evolveCharacter, loadCharacter, buildKnownFactsBlock, buildSharedExperiencesBlock, getStageBehaviors } = require('./character');
 const { getProfile, extractFactsFromMessage, addKnownFact, addSharedExperience, recordConversation, getContextPromptBlock } = require('./userProfile');
 const skills = require('./skills');
 
@@ -106,11 +106,14 @@ async function processChat(sessionId, message, model, opts = {}) {
   const characterId = opts.character
     || (await getSessionCharacter(sessionId).catch(() => null))
     || 'default';
-  loadCharacter(characterId);
+  const character = loadCharacter(characterId);
 
   // 8. 构建角色系统提示词（她/他是谁 + 对用户的了解 + 关系阶段）
   const relationshipStage = inferRelationshipStage(userProfile);
   const characterPrompt = buildCharacterPrompt(userProfile, relationshipStage);
+  const knownFactsBlock = buildKnownFactsBlock(userProfile);
+  const sharedBlock = buildSharedExperiencesBlock(userProfile);
+  const contextBlock = getContextPromptBlock();
 
   // 9. 组装完整系统提示词 —— 使用 Skills Registry 的组合引擎
   //    将所有动态内容打包为 context，由 skills.compose() 统一组装
@@ -152,7 +155,7 @@ async function processChat(sessionId, message, model, opts = {}) {
     daily_life: character?.daily_life || {},
     knownFactsBlock,
     sharedBlock,
-    relationshipStage: behaviors,
+    relationshipStage: getStageBehaviors(relationshipStage),
 
     // 动态注入
     narrativeStyle: settings.system_prompt || '',
