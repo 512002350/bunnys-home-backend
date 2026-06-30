@@ -220,6 +220,7 @@ async function loadDefaults() {
  * 全量热重载
  */
 async function reloadAll() {
+  initPromise = null;
   cacheLoaded = false;
   skillCache.clear();
   compositionCache.clear();
