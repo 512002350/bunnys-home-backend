@@ -258,6 +258,9 @@ async function processChat(sessionId, message, model, opts = {}) {
     .replace(/`(.+?)`/g, '$1');
 
   // 16. 处理 sticker 标记
+  // 16a. [sticker-search:关键词] — AI 联网搜表情（不管本地有没有，始终处理）
+  replyContent = await stickerService.replaceStickerSearchTags(replyContent);
+  // 16b. [sticker:名字] — 本地表情库替换
   if (stickers.length > 0) {
     replyContent = stickerService.replaceStickerTags(replyContent, stickers);
   }
@@ -401,9 +404,8 @@ async function buildLegacySystemPrompt(
   if (healthSummary) {
     systemPrompt += '\n\n（以下是用户最近 24 小时健康数据，可自然地引用来表达关心，但不需逐条复述）：\n' + healthSummary;
   }
-  if (stickers.length > 0) {
-    systemPrompt += await stickerService.stickerPromptBlock(stickers);
-  }
+  // 始终注入表情包使用说明（含联网搜索能力）
+  systemPrompt += await stickerService.stickerPromptBlock(stickers);
 
   if (lessonsBlock) {
     systemPrompt += lessonsBlock;

@@ -188,19 +188,29 @@ async function deleteSticker(id) {
  * 生成注入 prompt 的表情列表块（只注入名字+描述，不注入 URL）
  */
 async function stickerPromptBlock(stickers) {
-  if (!stickers.length) return '';
-  const list = stickers.map(s => `· ${s.name}：${s.descr}`).join('\n');
+  const list = stickers.length > 0
+    ? stickers.map(s => `· ${s.name}：${s.descr}`).join('\n')
+    : '';
 
+  // 尝试从 skill registry 获取完整说明（含联网搜索指令）
   try {
     const resolved = await skills.resolve('tool-sticker-prompt', { stickerList: list });
     if (resolved && resolved.trim()) return resolved;
   } catch (_) { /* fall through to legacy */ }
 
-  return (
-    '\n\n（你有这些表情包，想发就在回复里写 [sticker:名字]，' +
-    '名字要和下面完全一致；情绪到位再发、别硬塞、一条消息最多一个）：\n' +
-    list
-  );
+  // Legacy fallback
+  const usageGuide =
+    '\n\n' +
+    '【表情包使用规则】\n' +
+    '- 你有本地表情包库（见下方列表）。发送本地表情用 [sticker:名字]，名字必须和列表中完全一致。\n' +
+    '- 你还可以从互联网搜索表情包：用 [sticker-search:关键词]（例如 [sticker-search:猫猫哭泣]），' +
+    '系统会自动帮你找到最匹配的表情发出去。\n' +
+    '- 情绪到位才发，别硬塞。一次最多发一条表情。\n';
+
+  if (stickers.length > 0) {
+    return usageGuide + '（本地表情库）：\n' + list;
+  }
+  return usageGuide + '（本地表情库暂时为空，想发图就用 [sticker-search:关键词] 去搜吧）';
 }
 
 /**
@@ -220,6 +230,38 @@ function replaceStickerTags(text, stickers) {
   });
 }
 
+/**
+ * 替换回复中的 [sticker-search:关键词] 标记
+ * AI 用这个语法来搜索互联网表情包 → 搜狗 API → 返回第一张
+ */
+const STICKER_SEARCH_MARK = /\[sticker-search[:：]\s*([^\]\n]+?)\s*\]/g;
+
+async function replaceStickerSearchTags(text) {
+  // 找到所有 sticker-search 标记
+  const matches = [...text.matchAll(STICKER_SEARCH_MARK)];
+  if (!matches.length) return text;
+
+  let result = text;
+
+  for (const match of matches) {
+    const keyword = match[1].trim();
+    try {
+      const stickers = await searchExternalStickers(keyword);
+      if (stickers.length > 0) {
+        // 用第一张替换
+        result = result.replace(match[0], `[STICKER_IMG]${stickers[0].url}[/STICKER_IMG]`);
+      } else {
+        // 没找到就删掉标记，不留残骸
+        result = result.replace(match[0], '');
+      }
+    } catch (_) {
+      result = result.replace(match[0], '');
+    }
+  }
+
+  return result;
+}
+
 module.exports = {
   getStickers,
   searchStickers,
@@ -229,4 +271,5 @@ module.exports = {
   deleteSticker,
   stickerPromptBlock,
   replaceStickerTags,
+  replaceStickerSearchTags,
 };
