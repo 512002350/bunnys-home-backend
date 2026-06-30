@@ -192,25 +192,18 @@ async function stickerPromptBlock(stickers) {
     ? stickers.map(s => `· ${s.name}：${s.descr}`).join('\n')
     : '';
 
-  // 尝试从 skill registry 获取完整说明（含联网搜索指令）
-  try {
-    const resolved = await skills.resolve('tool-sticker-prompt', { stickerList: list });
-    if (resolved && resolved.trim()) return resolved;
-  } catch (_) { /* fall through to legacy */ }
+  // 按 README (4) 的思路组装表情包提示：
+  // 简洁直接 — "想发就在回复里单独一行写标签"，不做啰嗦说明
+  const hasLocal = stickers.length > 0;
+  const localGuide = hasLocal
+    ? '想发表情就在回复里单独一行写 [sticker:名字]，名字和下面完全一致；没有合适图就写 [sticker-search:关键词]，系统自动搜。情绪到位再发、别硬塞、一条消息最多一个'
+    : '你没有本地表情包。想发图就在回复里单独一行写 [sticker-search:关键词]（例如 [sticker-search:开心]），系统会自动搜图发出去。情绪到位再发、一条消息最多一个';
 
-  // Legacy fallback
-  const usageGuide =
-    '\n\n' +
-    '【表情包使用规则】\n' +
-    '- 你有本地表情包库（见下方列表）。发送本地表情用 [sticker:名字]，名字必须和列表中完全一致。\n' +
-    '- 你还可以从互联网搜索表情包：用 [sticker-search:关键词]（例如 [sticker-search:猫猫哭泣]），' +
-    '系统会自动帮你找到最匹配的表情发出去。\n' +
-    '- 情绪到位才发，别硬塞。一次最多发一条表情。\n';
-
-  if (stickers.length > 0) {
-    return usageGuide + '（本地表情库）：\n' + list;
+  let block = '\n\n（' + localGuide + '）';
+  if (hasLocal) {
+    block += '：\n' + list;
   }
-  return usageGuide + '（本地表情库暂时为空，想发图就用 [sticker-search:关键词] 去搜吧）';
+  return block;
 }
 
 /**
@@ -262,6 +255,44 @@ async function replaceStickerSearchTags(text) {
   return result;
 }
 
+/**
+ * 从用户消息和 AI 回复中提取情绪关键词，自动搜索表情包
+ * 当 AI 没有主动发图但对话情绪适合配图时调用
+ */
+async function autoPickSticker(userMessage, aiReply) {
+  // 情绪关键词映射
+  const emotionMap = {
+    '开心|高兴|快乐|哈哈|笑|棒': '开心',
+    '难过|伤心|哭|难受|低落|emo': '难过',
+    '生气|愤怒|讨厌|烦': '生气',
+    '惊讶|震惊|天哪': '惊讶',
+    '爱|喜欢|心动|可爱': '可爱',
+    '安慰|抱抱|摸摸|没事': '安慰',
+    '加油|努力|坚持': '加油',
+  };
+
+  const combined = (userMessage + ' ' + aiReply).toLowerCase();
+  let keyword = null;
+
+  for (const [pattern, kw] of Object.entries(emotionMap)) {
+    if (new RegExp(pattern).test(combined)) {
+      keyword = kw;
+      break;
+    }
+  }
+
+  if (!keyword) return null;
+
+  try {
+    const results = await searchExternalStickers(keyword);
+    if (results.length > 0) {
+      return results[0].url;
+    }
+  } catch (_) { /* ignore */ }
+
+  return null;
+}
+
 module.exports = {
   getStickers,
   searchStickers,
@@ -272,4 +303,5 @@ module.exports = {
   stickerPromptBlock,
   replaceStickerTags,
   replaceStickerSearchTags,
+  autoPickSticker,
 };

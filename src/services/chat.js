@@ -209,6 +209,13 @@ async function processChat(sessionId, message, model, opts = {}) {
     );
   }
 
+  // 在系统提示词末尾注入表情包使用提示（近因效应，确保角色看到）
+  // 用角色世界的语言写——这是这个聊天软件的功能，就像微信的表情包按钮
+  const stickerHint = stickers.length > 0
+    ? '\n\n【聊天软件功能】这个聊天软件里，表情包功能是这样用的：你想发本地图就写 [sticker:名字]，本地没有合适的图就写 [sticker-search:关键词]（系统会自动去网上搜索图片替换这个标签）。例如你想发一个表示开心的图，就写 [sticker-search:开心]。千万不要描述图片的样子或者说"我发了一张图"——你必须真的写出标签来。标签会变成真实的图片出现在对方屏幕上。'
+    : '\n\n【聊天软件功能】这个聊天软件里，你想发图给对方就在回复里写 [sticker-search:关键词]，系统会自动去网上搜索图片替换这个标签。例如你想发一个表示开心的图，就写 [sticker-search:开心]。千万不要描述图片的样子或者说"我发了一张图"——你必须真的写出标签来。标签会变成真实的图片出现在对方屏幕上。';
+  systemPrompt += stickerHint;
+
   if (isAborted()) return { aborted: true, sessionId };
 
   // 12. 根据立场推理微调 temperature
@@ -229,13 +236,14 @@ async function processChat(sessionId, message, model, opts = {}) {
     messagesForAI.push({ role: 'user', content: message });
   }
 
+
   // 14. 调用模型（透传 abortSignal）
   const memoriesForAI = relevantMemories.map(m => ({ summary: m.summary }));
   let result;
   try {
     result = await callModel(
       messagesForAI,
-      model || 'anthropic/claude-sonnet-4',
+      model || 'deepseek-chat',
       adjustedSettings,
       systemPrompt,
       memoriesForAI,
@@ -263,6 +271,14 @@ async function processChat(sessionId, message, model, opts = {}) {
   // 16b. [sticker:名字] — 本地表情库替换
   if (stickers.length > 0) {
     replyContent = stickerService.replaceStickerTags(replyContent, stickers);
+  }
+
+  // 16c. 自动补图：如果 AI 没发图但对话情绪强烈，自动搜一张附加到回复
+  if (!replyContent.includes('[STICKER_IMG]')) {
+    const autoSticker = await stickerService.autoPickSticker(message, replyContent);
+    if (autoSticker) {
+      replyContent += '\n\n[STICKER_IMG]' + autoSticker + '[/STICKER_IMG]';
+    }
   }
 
   // 16. 按双换行拆分为多条消息（模拟真人连发节奏）
@@ -309,7 +325,7 @@ async function processChat(sessionId, message, model, opts = {}) {
   reflect({
     userMessage: message,
     aiReply: replyContent,
-    model: model || 'anthropic/claude-sonnet-4',
+    model: model || 'deepseek-chat',
     wasCompressed: compressResult.compressed,
   }).catch(err => console.error('[Reflection] 反思异常:', err.message));
 

@@ -315,7 +315,7 @@
       "description": "将可用的表情包名字和描述注入系统提示，AI 在回复中用 [sticker:名字] 调用",
       "type": "tool",
       "category": "stickers",
-      "content": "（你有这些表情包，想发就在回复里写 [sticker:名字]，名字要和下面完全一致；情绪到位再发、别硬塞、一条消息最多一个）：\n{{stickerList || 暂无表情包}}",
+      "content": "【发表情规则 · 必须遵守】你和对方的聊天中，表情包不是文字描述——你必须用标签真的发出去。\n\n规则：\n1. 想发本地表情 → 在回复里单独一行写 [sticker:名字]（名字必须和下面列表完全一致）\n2. 列表里没有合适的图 → 写 [sticker-search:关键词]（例如 [sticker-search:难过]），系统会自动搜图发出去\n3. 禁止描述\"我翻了翻表情包\"\"我找了一张图\"\"我画了一张发给你\"——这些对方看不到。只有标签会被换成真的图片\n4. 情绪到位才发，一条消息最多一张\n\n本地表情库：\n{{stickerList || 暂无表情包}}",
       "variables": {
         "stickerList": {
           "type": "text",
@@ -517,11 +517,11 @@
       "description": "正常聊天时使用的系统提示词组装顺序",
       "skill_ids": [
         "char-default-core",
+        "tool-sticker-prompt",
         "style-narrative",
         "instruction-health",
         "instruction-image-desc",
         "instruction-typing-signals",
-        "tool-sticker-prompt",
         "tool-reflection-inject",
         "tool-stance-injection",
         "instruction-format-rules"
@@ -531,9 +531,10 @@
     {
       "id": "character-default",
       "name": "小鹿角色组装",
-      "description": "小鹿角色的系统提示词组（角色核心 + 格式规则）",
+      "description": "小鹿角色的系统提示词组（角色核心 + 表情 + 格式规则）",
       "skill_ids": [
         "char-default-core",
+        "tool-sticker-prompt",
         "instruction-format-rules"
       ],
       "separator": "\n\n"
@@ -541,9 +542,10 @@
     {
       "id": "character-shenye",
       "name": "沈夜角色组装",
-      "description": "沈夜角色的系统提示词组（角色核心 + 格式规则 + 沉默追问）",
+      "description": "沈夜角色的系统提示词组（角色核心 + 表情 + 格式规则 + 沉默追问）",
       "skill_ids": [
         "char-shenye-core",
+        "tool-sticker-prompt",
         "instruction-format-rules"
       ],
       "separator": "\n\n"

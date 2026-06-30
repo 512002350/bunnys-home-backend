@@ -118,7 +118,7 @@ router.post('/chat', async (req, res, next) => {
     // 创建 AbortController，客户端断开时触发 abort → 取消正在进行的 AI 调用
     const abortController = new AbortController();
     req.on('close', () => {
-      if (!res.writableEnded) {
+      if (req.aborted && !res.writableEnded) {
         abortController.abort();
       }
     });
@@ -307,7 +307,7 @@ router.post('/chat/retry', async (req, res, next) => {
     // 3. 创建 AbortController，客户端断开时中止
     const abortController = new AbortController();
     req.on('close', () => {
-      if (!res.writableEnded) {
+      if (req.aborted && !res.writableEnded) {
         abortController.abort();
       }
     });

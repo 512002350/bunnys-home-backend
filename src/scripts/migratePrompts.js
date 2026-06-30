@@ -413,7 +413,7 @@ const SKILLS = [
     description: '将可用的表情包名字和描述注入系统提示，AI 在回复中用 [sticker:名字] 调用',
     type: 'tool',
     category: 'stickers',
-    content: '（你有这些表情包，想发就在回复里写 [sticker:名字]，名字要和下面完全一致；情绪到位再发、别硬塞、一条消息最多一个）：\n{{stickerList || 暂无表情包}}',
+    content: '（想发表情就在回复里单独一行写标签。本地图写 [sticker:名字]，没有合适图写 [sticker-search:关键词]，系统自动搜。情绪到位再发、别硬塞、一条最多一张）：\n{{stickerList || 暂无表情包}}',
     variables: { stickerList: { type: 'text', description: '表情包列表（名字：描述，一行一个）', required: false, default: '' } },
     tags: ['stickers', 'expression', 'emoji'],
     priority: 100,

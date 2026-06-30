@@ -48,7 +48,7 @@ async function callModel(messages, model, settings, systemPrompt = '', memorySum
 
   // DeepSeek 直连
   if (provider === 'deepseek') {
-    return callDeepSeekAPI(messages, fullSystemPrompt, settings, opts.signal);
+    return callDeepSeekAPI(messages, fullSystemPrompt, settings, model, opts.signal);
   }
 
   // 默认走 OpenAI 兼容格式（OpenRouter、DeepSeek 等）
@@ -56,11 +56,11 @@ async function callModel(messages, model, settings, systemPrompt = '', memorySum
 }
 
 function getProvider(model) {
-  // DeepSeek 直连
+  // 1. DeepSeek 直连（最高优先级）
   if (model.startsWith('deepseek')) return 'deepseek';
-  // Anthropic 原生
-  if (model.startsWith('claude-') && !process.env.OPENROUTER_API_KEY) return 'anthropic';
-  // 默认走 OpenAI 兼容（OpenRouter）
+  // 2. Anthropic 直连（配置了 CLAUDE_API_KEY 时走原生 API）
+  if ((model.includes('claude') || model.startsWith('anthropic/')) && process.env.CLAUDE_API_KEY) return 'anthropic';
+  // 3. OpenRouter 兜底（最低优先级）
   return 'openai-compatible';
 }
 
@@ -81,7 +81,7 @@ async function callOpenAICompatibleAPI(messages, systemPrompt, settings, model, 
   }
 
   const body = {
-    model: model || 'anthropic/claude-sonnet-4',
+    model: model || 'deepseek-chat',
     messages: chatMessages,
     temperature: settings.temperature ?? 0.7,
     max_tokens: settings.max_response_tokens ?? 2048,
@@ -121,13 +121,38 @@ async function callOpenAICompatibleAPI(messages, systemPrompt, settings, model, 
 }
 
 /**
+ * 将前端/OpenRouter 风格模型名映射为 DeepSeek 原生 API 的模型 ID
+ * DeepSeek API 支持的模型: deepseek-chat, deepseek-v4-pro, deepseek-v4-flash, deepseek-reasoner
+ */
+function mapDeepSeekModel(model) {
+  if (!model) return 'deepseek-chat';
+  // 已经是 DeepSeek 原生名，直接透传
+  const nativeModels = ['deepseek-chat', 'deepseek-reasoner', 'deepseek-v4-pro', 'deepseek-v4-flash'];
+  if (nativeModels.includes(model)) return model;
+  // 去掉 OpenRouter 前缀 deepseek/ 或 deepseek/deepseek-
+  let name = model;
+  if (name.startsWith('deepseek/')) name = name.slice('deepseek/'.length);
+  // 再次检查去掉前缀后是否是原生名
+  if (nativeModels.includes(name)) return name;
+  // R1 系列 → reasoner
+  if (name.includes('r1')) return 'deepseek-reasoner';
+  // 其余 v3/v4 变体 (deepseek-chat-v3.1, deepseek-v3.2 等) → deepseek-chat
+  if (name.includes('v3') || name.includes('v4')) return 'deepseek-chat';
+  // 最终回退
+  return 'deepseek-chat';
+}
+
+/**
  * 直连 DeepSeek API（国内可用）
  */
-async function callDeepSeekAPI(messages, systemPrompt, settings, signal) {
+async function callDeepSeekAPI(messages, systemPrompt, settings, model, signal) {
   const apiKey = process.env.DEEPSEEK_API_KEY;
   if (!apiKey) {
     throw new Error('未配置 DEEPSEEK_API_KEY');
   }
+
+  // 将 OpenRouter 风格的模型名映射为 DeepSeek 原生 API 的模型名
+  const deepseekModel = mapDeepSeekModel(model);
 
   const chatMessages = [{ role: 'system', content: systemPrompt }];
   for (const m of messages) {
@@ -135,7 +160,7 @@ async function callDeepSeekAPI(messages, systemPrompt, settings, signal) {
   }
 
   const body = {
-    model: 'deepseek-chat',
+    model: deepseekModel,
     messages: chatMessages,
     temperature: settings.temperature ?? 0.7,
     max_tokens: settings.max_response_tokens ?? 2048,
