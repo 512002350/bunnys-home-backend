@@ -37,7 +37,7 @@ async function analyzeStance(userMessage, recentContext = [], relevantMemories =
 
   try {
     const result = await callModel(
-      [{ role: 'user', content: buildReasoningPrompt(userMessage, contextBlock) }],
+      [{ role: 'user', content: await buildReasoningPrompt(userMessage, contextBlock) }],
       REASONER_MODEL,
       { temperature: 0.1, max_response_tokens: 600 }, // 低温度保证一致性
       '' // system prompt 在 message 里
@@ -54,6 +54,8 @@ async function analyzeStance(userMessage, recentContext = [], relevantMemories =
   }
 }
 
+const skills = require('./skills');
+
 /**
  * 构建推理 prompt
  *
@@ -62,7 +64,16 @@ async function analyzeStance(userMessage, recentContext = [], relevantMemories =
  *   - 要求区分"字面义""情感义""意图义"三层
  *   - 自洽性约束：如果找不到足够证据，宁可输出低置信度
  */
-function buildReasoningPrompt(message, contextBlock) {
+async function buildReasoningPrompt(message, contextBlock) {
+  const result = await skills.resolve('tool-stance-analysis', {
+    message,
+    contextBlock: contextBlock ? '- 提供的历史上下文：\n' + contextBlock : '（无可用上下文）',
+  }).catch(() => null);
+
+  if (result && result.trim().length > 100) return result;
+
+  // 回退：传统硬编码 prompt
+  const ctxBlock = contextBlock ? '- 提供的历史上下文：\n' + contextBlock : '- （无可用上下文）';
   return `你是一个对话心理分析师。请对以下用户消息进行立场推理分析。
 
 ## 分析框架
@@ -76,7 +87,7 @@ function buildReasoningPrompt(message, contextBlock) {
 
 ### 步骤2：语境层（contextual）
 - 结合用户的历史记忆和近期对话，这句话是否符合用户一贯的行为模式？
-${contextBlock ? '- 提供的历史上下文：\n' + contextBlock : '- （无可用上下文）'}
+${ctxBlock}
 - 如果当前消息与用户过去的行为存在矛盾，标记为"行为不一致"
 
 ### 步骤3：意图层（intentional）

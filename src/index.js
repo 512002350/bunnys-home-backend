@@ -10,6 +10,7 @@ const chatRoutes = require('./routes/chat');
 const sessionsRoutes = require('./routes/sessions');
 const settingsRoutes = require('./routes/settings');
 const healthRoutes = require('./routes/health');
+const skillsRoutes = require('./routes/skills');
 // sticker 路由已合并到 chat.js 中（/api/stickers）
 
 const app = express();
@@ -46,6 +47,7 @@ app.use('/api', chatRoutes);      // /api/chat, /api/stickers
 app.use('/api/sessions', sessionsRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/health', healthRoutes);  // /api/health/update, /api/health/latest
+app.use('/api/skills', skillsRoutes); // /api/skills, /api/skills/:id, /api/skills/compositions
 
 // ---- 错误处理 ----
 app.use(errorHandler);
@@ -156,6 +158,14 @@ app.listen(PORT, () => {
   if (!process.env.SUPABASE_URL || !process.env.SUPABASE_KEY) {
     console.warn('⚠️  未配置 Supabase 环境变量，数据库功能将无法工作');
   }
+
+  // ---- Skills Registry ----
+  const skills = require('./services/skills');
+  skills.init().then(() => {
+    console.log('🧩 Skills Registry 已就绪，热重载 API: POST /api/skills/reload');
+  }).catch(err => {
+    console.warn('⚠️  Skills Registry 初始化失败（将使用回退文件）:', err.message);
+  });
 
   // ---- 自保活：每 10 分钟 ping 自己，防止 Render 免费版休眠 ----
   const hostname = process.env.RENDER_EXTERNAL_HOSTNAME; // Render 自动注入

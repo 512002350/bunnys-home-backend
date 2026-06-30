@@ -5,6 +5,8 @@
  * 供聊天图片上传和表情包上传共用
  */
 
+const skills = require('./skills');
+
 /**
  * 调用视觉 API 描述图片内容
  * 优先使用 OpenRouter（模型选择多），DeepSeek 直连作为备选
@@ -19,7 +21,8 @@ async function describeImage(base64Image, mimeType = 'image/jpeg', customPrompt 
     ? base64Image
     : `data:${mimeType};base64,${base64Image}`;
 
-  const defaultPrompt = '请用中文详细描述这张图片的内容。包括：场景、人物/物体、动作、氛围、文字（如有）。描述要具体、生动，让没有看到图片的人也能想象出画面。200字以内。';
+  const defaultPrompt = await skills.resolve('tool-image-describe').catch(() =>
+    '请用中文详细描述这张图片的内容。包括：场景、人物/物体、动作、氛围、文字（如有）。描述要具体、生动，让没有看到图片的人也能想象出画面。200字以内。');
   const prompt = customPrompt || defaultPrompt;
 
   // 策略1: 通过 OpenRouter 调用视觉模型

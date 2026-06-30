@@ -79,17 +79,26 @@ function getRelevantLessons(userMessage, limit = 3) {
   return matched;
 }
 
+const skills = require('./skills');
+
 /**
  * 将匹配的经验注入系统提示词
  * @param {string} userMessage - 用户消息
  * @returns {string} 经验提示块（追加到 system prompt）
  */
-function lessonsPromptBlock(userMessage) {
+async function lessonsPromptBlock(userMessage) {
   const relevant = getRelevantLessons(userMessage, 3);
   if (relevant.length === 0) return '';
 
   const lines = relevant.map(l => `· ${l.lesson}`);
-  return '\n\n## 过往经验（请自然地参考，不要逐条复述）\n' + lines.join('\n');
+  const lessonsText = lines.join('\n');
+
+  try {
+    const resolved = await skills.resolve('tool-reflection-inject', { lessons: lessonsText });
+    if (resolved && resolved.trim()) return resolved;
+  } catch (_) { /* fall through to legacy */ }
+
+  return '\n\n## 过往经验（请自然地参考，不要逐条复述）\n' + lessonsText;
 }
 
 // ========== 反思：分析对话提取教训 ==========

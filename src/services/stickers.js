@@ -27,16 +27,18 @@ async function getStickers() {
   return data || [];
 }
 
+const skills = require('./skills');
+
 /**
  * 上传表情包 —— 调视觉模型自动描述 → 存文件 → 入库
  * @param {string} imageBase64 - 图片的 base64 编码（不含 data:image/xxx;base64, 前缀）
  * @param {string} mimeType - 图片 MIME 类型，默认 'image/png'
  */
 async function uploadSticker(imageBase64, mimeType = 'image/png') {
-  const stickerPrompt =
+  const stickerPrompt = await skills.resolve('tool-sticker-recognize').catch(() =>
     '这是一张表情包。先起个3-6字短名(梗/情绪关键词,好记、能当引用名)，' +
     '再写一句话描述(图上文字 + 表达的情绪/梗 + 什么场景下适合发)。' +
-    '严格用这一行格式回复：名字｜描述';
+    '严格用这一行格式回复：名字｜描述');
 
   // 1. 调视觉模型识别
   let line;
@@ -106,9 +108,15 @@ async function deleteSticker(id) {
 /**
  * 生成注入 prompt 的表情列表块（只注入名字+描述，不注入 URL）
  */
-function stickerPromptBlock(stickers) {
+async function stickerPromptBlock(stickers) {
   if (!stickers.length) return '';
   const list = stickers.map(s => `· ${s.name}：${s.descr}`).join('\n');
+
+  try {
+    const resolved = await skills.resolve('tool-sticker-prompt', { stickerList: list });
+    if (resolved && resolved.trim()) return resolved;
+  } catch (_) { /* fall through to legacy */ }
+
   return (
     '\n\n（你有这些表情包，想发就在回复里写 [sticker:名字]，' +
     '名字要和下面完全一致；情绪到位再发、别硬塞、一条消息最多一个）：\n' +

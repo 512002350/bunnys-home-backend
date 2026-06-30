@@ -6,6 +6,7 @@ const { noteUserActivity } = require('../services/autonomous');
 // 后端的 sticker tag 替换逻辑：把 [sticker:名字] 换成前端能识别的图片标记
 // 前端收到后渲染 <img> 标签
 const stickerService = require('../services/stickers');
+const skills = require('../services/skills');
 
 // GET /api/stickers — 表情库列表（注入 prompt 用）
 router.get('/stickers', async (req, res, next) => {
@@ -141,22 +142,9 @@ router.post('/chat/extract-context', async (req, res, next) => {
     const settings = await getSettings();
 
     // 用便宜模型提取关键上下文
-    const extractionPrompt = `你是一个对话摘要助手。请从以下对话中提取需要在未来会话中记住的关键信息。只提取真正重要的内容，不要面面俱到。
-
-提取格式（严格JSON）：
-{
-  "summary": "一句话概括最近对话的核心主题或状态（30字以内）",
-  "key_points": ["关键事实1", "关键事实2", ...]  // 最多5条，每条15字以内
-}
-
-注意事项：
-- 只提取对未来对话有持续影响的信息
-- 忽略临时性的闲聊内容
-- 如果有未完成的话题或决定，标记出来
-- 保持客观，不要带入角色语气
-
-对话内容：
-${conversationText}`;
+    const extractionPrompt = await skills.resolve('tool-extract-context', {
+      conversationText,
+    }).catch(() => `你是一个对话摘要助手。请从以下对话中提取需要在未来会话中记住的关键信息...对话内容：\n${conversationText}`);
 
     const result = await callModel(
       [{ role: 'user', content: extractionPrompt }],

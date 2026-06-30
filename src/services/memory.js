@@ -15,6 +15,7 @@
 const { callModel, estimateMessagesTokens } = require('./ai');
 const { getMemories, insertMemory, searchMemoriesByEmbedding, hideMessages, deleteMemories, getSettings, reheatMemories } = require('./supabase');
 const { getEmbedding, getEmbeddings } = require('./embedding');
+const skills = require('./skills');
 
 /**
  * 将消息按"轮"分组（user + assistant = 一轮）
@@ -85,11 +86,7 @@ async function maybeCompress(visibleMessages, settings) {
     .join('\n\n');
 
   try {
-    const result = await callModel(
-      // 伪装成一条用户消息让压缩模型处理
-      [{ role: 'user', content: text }],
-      compressionModel,
-      { temperature: 0.3, max_response_tokens: 800 },
+    const systemPrompt = await skills.resolve('tool-compression-decompose').catch(() =>
       `你是一个对话摘要助手。请将以下对话片段拆解为独立的记忆事实，每条一行。
 要求：
 - 每条事实独立、语义边界清晰（一条事实 = 一个可独立检索的信息点）
@@ -100,6 +97,13 @@ async function maybeCompress(visibleMessages, settings) {
 - 用第三人称描述用户，用"AI"指代你自己
 - 每条不超过 80 字
 - 输出纯文本，每行一条事实，不要编号、不要 markdown、不要空行`
+    );
+
+    const result = await callModel(
+      [{ role: 'user', content: text }],
+      compressionModel,
+      { temperature: 0.3, max_response_tokens: 800 },
+      systemPrompt
     );
 
     const rawOutput = result.content?.trim();
@@ -284,11 +288,14 @@ async function compressCalendarLevel(level = 'daily') {
         // 用便宜模型把当天事实合并为一条日摘要
         const factTexts = dayFacts.map(f => f.summary).join('\n');
         const { callModel } = require('./ai');
+        const calendarSystemPrompt = await skills.resolve('tool-calendar-summarize', { date: day }).catch(() =>
+          `请将以下${day}的记忆事实合并为一条简短的日摘要（50-150字）。保留重要事件和情感变化，用第三人称。`
+        );
         const result = await callModel(
           [{ role: 'user', content: factTexts }],
           'deepseek-chat',
           { temperature: 0.3, max_response_tokens: 400 },
-          `请将以下${day}的记忆事实合并为一条简短的日摘要（50-150字）。保留重要事件和情感变化，用第三人称。`
+          calendarSystemPrompt
         );
 
         const dailySummary = result.content?.trim();

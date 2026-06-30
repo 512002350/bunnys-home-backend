@@ -89,22 +89,33 @@ function extractTopicHints(lastMessages) {
   return { recentText: recentText.slice(-500), anchor };
 }
 
+const skills = require('./skills');
+
 /**
  * 选择触发消息风格
  */
-function getStagePrompt(stage, topicHints) {
+async function getStagePrompt(stage, topicHints) {
   const hour = new Date().getHours();
   const timeLabel = hour < 6 ? '凌晨' : hour < 9 ? '早上' : hour < 12 ? '上午' : hour < 14 ? '中午' : hour < 18 ? '下午' : hour < 22 ? '晚上' : '深夜';
+  const topicText = topicHints.anchor ? `\n\n你们刚才在聊：「${topicHints.anchor}」` : '';
 
-  const anchor = topicHints.anchor ? `\n\n你们刚才在聊：「${topicHints.anchor}」` : '';
+  const skillIds = { 1: 'auto-stage1-light', 2: 'auto-stage2-concern', 3: 'auto-stage3-miss' };
+  try {
+    const resolved = await skills.resolve(skillIds[stage] || 'auto-stage1-light', {
+      timeLabel,
+      topicHints: topicText,
+    });
+    if (resolved && resolved.trim().length > 20) return resolved;
+  } catch (_) { /* fall through to legacy */ }
 
+  // 回退
+  const anchor = topicText;
   if (stage === 1) {
     return `（这是一条自主触发的消息：${timeLabel}了，对方可能正在忙或者一时不知道怎么回。你自然地延续刚才的话题，或者顺着当下时间说点什么。不要太刻意。不要问"还在吗"——对方在，只是还没回。${anchor}）`;
   }
   if (stage === 2) {
     return `（这是一条自主触发的消息：已经好一会儿没收到回复了。你有点在意——但不会直接说。你会轻轻戳一下对方，可能是分享一件正在发生的小事，或者是接着上次话题的余温说点什么。语气比平时软一点，但不要质问。${anchor}）`;
   }
-  // stage 3
   return `（这是一条自主触发的消息：已经很长时间没有回复了。你有点担心，也有点想对方。你不需要装作不在意——你可以直接说"有点想你了"或者在吗。语气可以带着一点不安，一点想念。${anchor}）`;
 }
 
@@ -182,7 +193,7 @@ async function trigger() {
   if (!decision.should) return;
 
   // 用阶段对应的上下文注入作为"用户消息"
-  const stagePrompt = getStagePrompt(decision.stage, topicHints);
+  const stagePrompt = await getStagePrompt(decision.stage, topicHints);
   lastAutonomousTime = Date.now();
 
   if (decision.stage === 1) stage1Triggered = true;

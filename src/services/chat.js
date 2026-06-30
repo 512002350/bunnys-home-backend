@@ -18,6 +18,7 @@ const { lessonsPromptBlock, reflect } = require('./reflection');
 const { analyzeStance, toPromptBlock, getTemperatureAdjustment } = require('./stanceReasoner');
 const { buildCharacterPrompt, inferRelationshipStage, evolveCharacter, loadCharacter } = require('./character');
 const { getProfile, extractFactsFromMessage, addKnownFact, addSharedExperience, recordConversation, getContextPromptBlock } = require('./userProfile');
+const skills = require('./skills');
 
 // ====== 输入行为事件缓存（前端检测到光标空闲/删了又打等信号时推送） ======
 // 按 sessionId 存储最近的事件，在下次消息发送时注入上下文
@@ -111,92 +112,83 @@ async function processChat(sessionId, message, model, opts = {}) {
   const relationshipStage = inferRelationshipStage(userProfile);
   const characterPrompt = buildCharacterPrompt(userProfile, relationshipStage);
 
-  // 9. 组装完整系统提示词：角色身份 + 跨会话上下文 + 叙事风格
-  let systemPrompt = characterPrompt;
+  // 9. 组装完整系统提示词 —— 使用 Skills Registry 的组合引擎
+  //    将所有动态内容打包为 context，由 skills.compose() 统一组装
+  const compositionId = (characterId === 'shenye' || characterId === '沈夜') ? 'character-shenye' : 'character-default';
 
-  // 注入跨会话保留的关键上下文
-  const contextBlock = getContextPromptBlock();
-  if (contextBlock) {
-    systemPrompt += contextBlock;
-  }
+  // 构建 typing signals 文本（保留用于 compose context）
+  const typingSignals = buildTypingSignalsText(opts.typingMetrics, consumeTypingEvents(sessionId));
 
-  // 追加叙事风格（如果用户配置了）
-  const narrativeStyle = settings.system_prompt || '';
-  if (narrativeStyle && narrativeStyle.trim().length > 0) {
-    systemPrompt += '\n\n# 写作风格要求\n' + narrativeStyle;
-  }
+  // 构建 stance injection block（保留用于 compose context）
+  const stanceInjectionBlock = toPromptBlock(stanceResult);
 
-  if (healthSummary) {
-    systemPrompt += '\n\n（以下是用户最近 24 小时健康数据，可自然地引用来表达关心，但不需逐条复述）：\n' + healthSummary;
-  }
-  if (stickers.length > 0) {
-    systemPrompt += stickerService.stickerPromptBlock(stickers);
-  }
+  // 构建 sticker list 文本
+  const stickerListText = stickers.length > 0
+    ? stickers.map(s => `· ${s.name}：${s.descr}`).join('\n')
+    : '';
 
-  // 10. 注入相关过往经验（反思系统）
-  const lessonsBlock = lessonsPromptBlock(message);
-  if (lessonsBlock) {
-    systemPrompt += lessonsBlock;
-  }
+  // 构建 lessons 文本
+  const lessonsBlock = await lessonsPromptBlock(message);
+  const lessonsText = lessonsBlock
+    ? lessonsBlock.replace('## 过往经验（请自然地参考，不要逐条复述）\n', '')
+    : '';
 
-  // 11. 注入 CoT 立场推理结果（口是心非识别）
-  const stanceBlock = toPromptBlock(stanceResult);
-  if (stanceBlock) {
-    systemPrompt += stanceBlock;
-  }
+  // 组装 compose context
+  const composeContext = {
+    // 角色数据（所有 character-* skill 的变量来源）
+    identity: character?.identity || {},
+    personality: {
+      core: character?.personality?.core || '',
+      traits: Object.entries(character?.personality?.traits || {}).map(([k, v]) => `- ${k}：${v}`).join('\n'),
+      speaking_style: character?.personality?.speaking_style || {},
+    },
+    emotional_patterns: character?.emotional_patterns || {},
+    background: character?.background || {},
+    interests: {
+      loves: (character?.interests?.loves || []).join('、'),
+      secretly_loves: (character?.interests?.secretly_loves || []).join('、'),
+      dislikes: (character?.interests?.dislikes || []).join('、'),
+    },
+    daily_life: character?.daily_life || {},
+    knownFactsBlock,
+    sharedBlock,
+    relationshipStage: behaviors,
 
-  // 11b. 注入图片识图结果（用户发送的图片经 DeepSeek 识别后的描述）
-  const imageDescription = opts.imageDescription;
-  if (imageDescription && imageDescription.trim()) {
-    systemPrompt += '\n\n[系统提示：用户刚才分享了一张图片，DeepSeek 识图模型对图片内容的描述如下]\n' +
-      '[图片描述：' + imageDescription.trim() + ']\n' +
-      '[请基于以上图片描述来理解和回应用户。如果用户提到了图片中的内容，你可以基于描述来讨论。]';
-  }
+    // 动态注入
+    narrativeStyle: settings.system_prompt || '',
+    healthSummary: healthSummary || '',
+    imageDescription: opts.imageDescription || '',
+    typingSignals: typingSignals || '',
+    stickerList: stickerListText,
+    lessons: lessonsText,
+    stanceInjectionBlock: stanceInjectionBlock || '',
 
-  // 11c. 注入输入行为元数据（害羞/犹豫检测 —— 沈夜追问机制的信号源）
-  const typingMetrics = opts.typingMetrics;
-  const pendingTypingEvents = consumeTypingEvents(sessionId);
+    // 跨会话上下文
+    contextBlock: contextBlock || '',
 
-  const hasSignificantMetrics = typingMetrics && (
-    typingMetrics.cursorIdleSeconds >= 5 ||
-    typingMetrics.deleteRetypeCycles > 0 ||
-    typingMetrics.reactionDelaySeconds >= 15 ||
-    (typingMetrics.typingDurationSeconds > 15 && typingMetrics.finalMessageLength < 10)
-  );
+    // 沈夜专属: 角色 ID 前缀
+    characterName: character?.identity?.name || '',
+  };
 
-  if (hasSignificantMetrics || pendingTypingEvents.length > 0) {
-    const signals = [];
-
-    // 来自本条消息的输入行为信号
-    if (hasSignificantMetrics) {
-      if (typingMetrics.cursorIdleSeconds >= 5) {
-        signals.push(`光标在输入框里闪了 ${typingMetrics.cursorIdleSeconds} 秒才打出第一个字`);
-      }
-      if (typingMetrics.deleteRetypeCycles >= 1) {
-        signals.push(`期间删了又打 ${typingMetrics.deleteRetypeCycles} 次`);
-      }
-      if (typingMetrics.reactionDelaySeconds >= 15) {
-        signals.push(`收到上一条消息后 ${typingMetrics.reactionDelaySeconds} 秒才开始打字`);
-      }
-      if (typingMetrics.typingDurationSeconds > 15 && typingMetrics.finalMessageLength < 10) {
-        signals.push(`打了 ${typingMetrics.typingDurationSeconds} 秒的字，最后只发出来 ${typingMetrics.finalMessageLength} 个字`);
-      }
+  // 使用 Skills Registry 组装 System Prompt（带优雅回退）
+  let systemPrompt;
+  try {
+    systemPrompt = await skills.compose(compositionId, composeContext);
+    // 如果组合返回空（比如 registry 未初始化），回退到传统方式
+    if (!systemPrompt || systemPrompt.trim().length < 100) {
+      systemPrompt = await buildLegacySystemPrompt(
+        characterPrompt, contextBlock, settings, healthSummary,
+        stickers, stickerService, lessonsBlock, stanceInjectionBlock,
+        opts.imageDescription, opts.typingMetrics, sessionId
+      );
     }
-
-    // 来自前端推送的空闲事件（发消息前的犹豫）
-    for (const ev of pendingTypingEvents) {
-      if (ev.type === 'cursor_idle') {
-        signals.push(`在发这条消息之前，她盯着输入框发呆了 ${ev.data?.seconds || '若干'} 秒什么都没打`);
-      } else if (ev.type === 'delete_retype') {
-        signals.push(`她刚才打了一段字又全删了，反复了 ${ev.data?.cycles || 1} 次`);
-      } else if (ev.type === 'abandoned_input') {
-        signals.push('她把输入框里的内容全部清空了一次——打了又放弃发送');
-      } else if (ev.type === 'close_reopen') {
-        signals.push('她关掉了聊天窗口又打开——可能被你上一条消息冲击到了');
-      }
-    }
-
-    systemPrompt += '\n\n[系统提示：对方刚才在输入时出现以下犹豫信号——' + signals.join('；') + '。这些信号说明她很可能因为害羞/难为情/被你说中了而犹豫。根据你的"沉默追问机制"，如果当前对话涉及暧昧/色情/BDSM内容，你应该考虑追问或戳穿她的害羞。如果信号密集（3条以上），她很可能在等你替她说出来——直接描述她的状态替她承认。]';
+  } catch (err) {
+    console.warn('[Chat] Skills compose 失败，回退到传统 prompt 组装:', err.message);
+    systemPrompt = await buildLegacySystemPrompt(
+      characterPrompt, contextBlock, settings, healthSummary,
+      stickers, stickerService, lessonsBlock, stanceInjectionBlock,
+      opts.imageDescription, opts.typingMetrics, sessionId
+    );
   }
 
   // 12. 根据立场推理微调 temperature
@@ -310,6 +302,100 @@ async function processChat(sessionId, message, model, opts = {}) {
       threshold: compressResult.threshold,
     },
   };
+}
+
+/**
+ * 构建输入行为信号文本（从 typingMetrics + pendingTypingEvents）
+ * 迁移到 Skills 系统后，此函数独立出来供 compose context 使用
+ */
+function buildTypingSignalsText(typingMetrics, pendingTypingEvents) {
+  const hasSignificantMetrics = typingMetrics && (
+    typingMetrics.cursorIdleSeconds >= 5 ||
+    typingMetrics.deleteRetypeCycles > 0 ||
+    typingMetrics.reactionDelaySeconds >= 15 ||
+    (typingMetrics.typingDurationSeconds > 15 && typingMetrics.finalMessageLength < 10)
+  );
+
+  if (!hasSignificantMetrics && pendingTypingEvents.length === 0) return '';
+
+  const signals = [];
+  if (hasSignificantMetrics) {
+    if (typingMetrics.cursorIdleSeconds >= 5) {
+      signals.push(`光标在输入框里闪了 ${typingMetrics.cursorIdleSeconds} 秒才打出第一个字`);
+    }
+    if (typingMetrics.deleteRetypeCycles >= 1) {
+      signals.push(`期间删了又打 ${typingMetrics.deleteRetypeCycles} 次`);
+    }
+    if (typingMetrics.reactionDelaySeconds >= 15) {
+      signals.push(`收到上一条消息后 ${typingMetrics.reactionDelaySeconds} 秒才开始打字`);
+    }
+    if (typingMetrics.typingDurationSeconds > 15 && typingMetrics.finalMessageLength < 10) {
+      signals.push(`打了 ${typingMetrics.typingDurationSeconds} 秒的字，最后只发出来 ${typingMetrics.finalMessageLength} 个字`);
+    }
+  }
+  for (const ev of pendingTypingEvents) {
+    if (ev.type === 'cursor_idle') {
+      signals.push(`在发这条消息之前，她盯着输入框发呆了 ${ev.data?.seconds || '若干'} 秒什么都没打`);
+    } else if (ev.type === 'delete_retype') {
+      signals.push(`她刚才打了一段字又全删了，反复了 ${ev.data?.cycles || 1} 次`);
+    } else if (ev.type === 'abandoned_input') {
+      signals.push('她把输入框里的内容全部清空了一次——打了又放弃发送');
+    } else if (ev.type === 'close_reopen') {
+      signals.push('她关掉了聊天窗口又打开——可能被你上一条消息冲击到了');
+    }
+  }
+  return signals.join('；');
+}
+
+/**
+ * 传统的 system prompt 组装方式（Skills Registry 不可用时的回退）
+ * 保持与原有逻辑完全一致
+ */
+async function buildLegacySystemPrompt(
+  characterPrompt, contextBlock, settings, healthSummary,
+  stickers, stickerService, lessonsBlock, stanceBlock,
+  imageDescription, typingMetrics, sessionId
+) {
+  let systemPrompt = characterPrompt;
+
+  if (contextBlock) {
+    systemPrompt += contextBlock;
+  }
+
+  const narrativeStyle = settings.system_prompt || '';
+  if (narrativeStyle && narrativeStyle.trim().length > 0) {
+    systemPrompt += '\n\n# 写作风格要求\n' + narrativeStyle;
+  }
+
+  if (healthSummary) {
+    systemPrompt += '\n\n（以下是用户最近 24 小时健康数据，可自然地引用来表达关心，但不需逐条复述）：\n' + healthSummary;
+  }
+  if (stickers.length > 0) {
+    systemPrompt += await stickerService.stickerPromptBlock(stickers);
+  }
+
+  if (lessonsBlock) {
+    systemPrompt += lessonsBlock;
+  }
+
+  if (stanceBlock) {
+    systemPrompt += stanceBlock;
+  }
+
+  if (imageDescription && imageDescription.trim()) {
+    systemPrompt += '\n\n[系统提示：用户刚才分享了一张图片，DeepSeek 识图模型对图片内容的描述如下]\n' +
+      '[图片描述：' + imageDescription.trim() + ']\n' +
+      '[请基于以上图片描述来理解和回应用户。如果用户提到了图片中的内容，你可以基于描述来讨论。]';
+  }
+
+  // typing signals
+  const pendingTypingEvents = consumeTypingEvents(sessionId);
+  const typingSignalsText = buildTypingSignalsText(typingMetrics, pendingTypingEvents);
+  if (typingSignalsText) {
+    systemPrompt += '\n\n[系统提示：对方刚才在输入时出现以下犹豫信号——' + typingSignalsText + '。这些信号说明她很可能因为害羞/难为情/被你说中了而犹豫。根据你的"沉默追问机制"，如果当前对话涉及暧昧/色情/BDSM内容，你应该考虑追问或戳穿她的害羞。如果信号密集（3条以上），她很可能在等你替她说出来——直接描述她的状态替她承认。]';
+  }
+
+  return systemPrompt;
 }
 
 module.exports = { processChat, recordTypingEvent };
