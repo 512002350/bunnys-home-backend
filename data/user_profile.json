@@ -1,11 +1,84 @@
 {
   "created_at": "2026-06-29T19:25:37.760Z",
-  "updated_at": "2026-06-30T14:25:28.062Z",
+  "updated_at": "2026-06-30T17:59:27.275Z",
   "first_chat_at": "2026-06-30T14:25:28.062Z",
-  "total_messages_exchanged": 2,
-  "total_sessions": 1,
+  "total_messages_exchanged": 20,
+  "total_sessions": 10,
   "deep_conversations": 0,
-  "known_facts": [],
+  "known_facts": [
+    {
+      "content": "他说「你好，简短回复：今天天气怎么样？…」但可能真正的意思是——无明显潜台词",
+      "source": "she_inferred",
+      "importance": 3,
+      "created_at": "2026-06-30T17:03:20.920Z",
+      "updated_at": "2026-06-30T17:03:20.920Z",
+      "first_mentioned_at": "2026-06-30T17:03:20.920Z",
+      "times_referenced": 1
+    },
+    {
+      "content": "第一次在深夜聊天。那晚她说了比平时多很多的话。",
+      "source": "she_observed",
+      "importance": 8,
+      "created_at": "2026-06-30T17:03:20.920Z",
+      "updated_at": "2026-06-30T17:03:20.920Z",
+      "first_mentioned_at": "2026-06-30T17:03:20.920Z",
+      "times_referenced": 1
+    },
+    {
+      "content": "他说「你看看我发的是什么图片？上面有什么东西？…」但可能真正的意思是——用户对AI没有直接回应图片内容感到不满，要求AI正视并回应自己的分享。",
+      "source": "she_inferred",
+      "importance": 3,
+      "created_at": "2026-06-30T17:05:04.333Z",
+      "updated_at": "2026-06-30T17:05:04.333Z",
+      "first_mentioned_at": "2026-06-30T17:05:04.333Z",
+      "times_referenced": 1
+    },
+    {
+      "content": "我刚才发的照片里是什么建筑？它在哪里？",
+      "source": "user_stated",
+      "importance": 7,
+      "created_at": "2026-06-30T17:10:15.221Z",
+      "updated_at": "2026-06-30T17:10:15.221Z",
+      "first_mentioned_at": "2026-06-30T17:10:15.221Z",
+      "times_referenced": 2
+    },
+    {
+      "content": "他说「刚才的照片里是什么人？描述一下她的样子。…」但可能真正的意思是——用户对照片中的人物产生了兴趣或好奇，可能想确认AI是否注意到照片中的细节，或想引导话题转向该人物。",
+      "source": "she_inferred",
+      "importance": 3,
+      "created_at": "2026-06-30T17:10:27.448Z",
+      "updated_at": "2026-06-30T17:10:27.448Z",
+      "first_mentioned_at": "2026-06-30T17:10:27.448Z",
+      "times_referenced": 1
+    },
+    {
+      "content": "他说「这张照片拍的是什么地方？…」但可能真正的意思是——用户可能对照片中只有猫、没有人感到困惑，想确认地点以验证AI之前的说法",
+      "source": "she_inferred",
+      "importance": 3,
+      "created_at": "2026-06-30T17:10:39.596Z",
+      "updated_at": "2026-06-30T17:10:39.596Z",
+      "first_mentioned_at": "2026-06-30T17:10:39.596Z",
+      "times_referenced": 1
+    },
+    {
+      "content": "他说「这照片里是什么食物？…」但可能真正的意思是——用户通过转移话题到食物上，回避直接回应AI的邀请（告知地址），同时保持对话继续",
+      "source": "she_inferred",
+      "importance": 3,
+      "created_at": "2026-06-30T17:10:51.346Z",
+      "updated_at": "2026-06-30T17:10:51.346Z",
+      "first_mentioned_at": "2026-06-30T17:10:51.346Z",
+      "times_referenced": 1
+    },
+    {
+      "content": "他说「（这是一条输入犹豫追问·阶段2：凌晨了。对方在输入框里光标发…」但可能真正的意思是——用户希望AI主动替对方说出犹豫的内容，以打破僵局或加速互动",
+      "source": "she_inferred",
+      "importance": 3,
+      "created_at": "2026-06-30T17:58:54.848Z",
+      "updated_at": "2026-06-30T17:59:27.275Z",
+      "first_mentioned_at": "2026-06-30T17:58:54.848Z",
+      "times_referenced": 2
+    }
+  ],
   "shared_experiences": [],
   "observed_patterns": [],
   "things_she_is_figuring_out": [],
@@ -15,7 +88,7 @@
     "has_shared_vulnerability": false,
     "has_been_sarcastic_with_you": false,
     "has_said_goodnight_first": false,
-    "deep_night_conversations": 0,
+    "deep_night_conversations": 9,
     "times_she_almost_said_it": 0
   }
 }
